@@ -19,9 +19,10 @@ class CatalogMetadataHarvester:
         self.metadata = {}
 
     def merge_metadata(self, new_metadata):
-        for key, value in new_metadata.items():
-            if key not in self.metadata:
-                self.metadata[key] = new_metadata[key]
+        if new_metadata:
+            for key, value in new_metadata.items():
+                if key not in self.metadata:
+                    self.metadata[key] = new_metadata[key]
 
     def harvest(self):
         self.harvest_self_hosted_metadata()
