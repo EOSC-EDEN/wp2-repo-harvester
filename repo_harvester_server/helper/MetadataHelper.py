@@ -4,15 +4,51 @@ import rdflib
 import requests
 from rdflib import RDF, DCAT, SDO, DC, DCTERMS, FOAF
 from lxml import etree
+from lxml import html as lxml_html
+import logging
+import os
 
+# Suppress the specific rdflib warning about URL templates
+logging.getLogger('rdflib.term').setLevel(logging.ERROR)
 
 
 class MetadataHelper:
     def __init__(self):
-        1==1
+        # Get the directory where the current script is located
+        helper_dir = os.path.dirname(os.path.abspath(__file__))
+        # Construct the absolute path to the xslt file
+        self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
 
+    def get_html_meta_tags_metadata(self, html_content):
+        """
+        Parses standard HTML meta tags (description, keywords, author) from HTML content.
+        """
+        metadata = {}
+        if not isinstance(html_content, str) or not html_content:
+            return metadata
 
+        try:
+            doc = lxml_html.fromstring(html_content)
+            
+            description = doc.xpath('//meta[@name="description"]/@content')
+            if description:
+                metadata['description'] = description[0].strip()
 
+            keywords = doc.xpath('//meta[@name="keywords"]/@content')
+            if keywords:
+                # Keywords are often comma-separated
+                metadata['keywords'] = [k.strip() for k in keywords[0].split(',')]
+
+            author = doc.xpath('//meta[@name="author"]/@content')
+            if author:
+                # Assuming the author of the site can be considered a publisher
+                metadata['publisher'] = [author[0].strip()]
+            
+        except Exception as e:
+            print(f"Error parsing HTML meta tags: {e}")
+            
+        # Filter out any keys with empty values
+        return {k: v for k, v in metadata.items() if v}
 
     def get_jsonld_metadata(self, jstr):
         metadata = {}
@@ -27,7 +63,7 @@ class MetadataHelper:
             cg.bind("dcat", DCAT, override=True)
             rdf_xml = cg.default_context.serialize(format='pretty-xml')
             rdf_doc = etree.fromstring(rdf_xml.encode('utf-8'))
-            xslt_doc = etree.parse("../xslt/rdf2json.xslt")
+            xslt_doc = etree.parse(self.xslt_path)
             transform = etree.XSLT(xslt_doc)
             json_result_str = str(transform(rdf_doc))
             json_data = json.loads(json_result_str)
