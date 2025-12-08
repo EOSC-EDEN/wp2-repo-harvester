@@ -51,8 +51,9 @@ class CatalogMetadataHarvester:
             if self._search_re3data(self.catalog_url):
                 return
 
-            # Strategy 2: Search by Domain only (e.g. 'zenodo.org' instead of full path)
-            # This helps if re3data indexed 'http' but we have 'https', or subdomains.
+            # Strategy 2: Search by Domain only.
+            # This helps if re3data indexed 'http' but we have 'https', 
+            # or if the path varies slightly (e.g. ssh.datastations.nl).
             domain = urlparse(self.catalog_url).netloc
             if domain:
                 print(f"Retrying re3data search with domain: {domain}")
@@ -143,7 +144,7 @@ class CatalogMetadataHarvester:
             print('Invalid repo URI:', self.catalog_url)
             return
 
-        # User-Agent to avoid 403 blocks from sites like Zenodo
+        # Use a polite User-Agent for research harvesting
         headers = {
             'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'

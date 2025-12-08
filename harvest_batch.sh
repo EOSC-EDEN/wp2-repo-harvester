@@ -4,9 +4,7 @@
 # Format: "Filename_Prefix|URL"
 REPOS=(
     "pangaea|https://pangaea.de"
-    "zenodo|https://zenodo.org"
     "dans_ssh|https://ssh.datastations.nl"
-    "fdr_can|https://www.frdr-dfdr.ca/repo/"
 )
 
 # Base URL of your local harvester server
