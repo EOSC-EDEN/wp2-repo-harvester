@@ -1,0 +1,24 @@
+# Python compilation
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# IDE settings (PyCharm/VSCode)
+.idea/
+.vscode/
+*.swp
+*.iml
+
+# Temporary/Generated files
+tree.txt
+debug_harvester.py
+test_parser_logic.py
+
+# OS generated
+.DS_Store
+Thumbs.db

@@ -1,0 +1,48 @@
+{
+  "@context": "../context.jsonld",
+  "@graph": [
+    {
+      "id": "https://eden-fidelis.eu/example/registry/service_2",
+      "type": "dcat:Catalog",
+      "title": "DANS Data Station Social Sciences and Humanities",
+      "description": "This data station allows you to deposit and search for data within the social sciences and humanities.",
+      "endpointURL": "https://ssh.datastations.nl/api/",
+      "landingPage": "https://ssh.datastations.nl/",
+      "publisher": {
+        "id": "https://eden-fidelis.eu/example/registry/org_1",
+        "type": "org:Organization",
+        "name": "Data Archiving Networked Services (DANS)",
+        "country": "The Netherlands"
+      },
+      "services": [
+        {
+          "id": "https://eden-fidelis.eu/example/registry/service_3",
+          "title": "SWORD2 Interface for SSH",
+          "type": "dcat:DataService"
+        }
+      ]
+    },
+    {
+      "id": "https://eden-fidelis.eu/example/registry/service_4",
+      "type": "dcat:DataService",
+      "title": "File Validation Service for Finnish National Digital Preservation Services",
+      "description": "You can validate your files against the National Digital Preservation Services (DPS) in Finland.",
+      "endpointURL": "https://validation.digitalpreservation.fi/#/en",
+      "landingPage": "https://digitalpreservation.fi/",
+      "publisher": {
+        "id": "https://eden-fidelis.eu/example/registry/org_2",
+        "type": "org:Organization",
+        "name": "CSC – IT Center for Science Ltd.",
+        "country": "Finland"
+      },
+      "containsProcess": [
+        {
+          "id": "https://eden-fidelis.eu/example/cpp/010",
+          "type": "skos:Concept",
+          "label": "CPP-010",
+          "title": "File Format Validation"
+        }
+      ]
+    }
+  ]
+}
