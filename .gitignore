@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Harvest folder
+output/
+
 # Virtual Environments
 venv/
 .venv/

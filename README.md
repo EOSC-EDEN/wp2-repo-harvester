@@ -53,19 +53,12 @@ curl "http://localhost:8080/?url=https://pangaea.de"
 
 ### 3. Real World Usage (Batch Harvesting)
 
-To harvest a list of repositories, you can loop through them sending requests to your local server.
-
- Example (Bash): 
-```bash
-for url in "https://zenodo.org" "https://pangaea.de"; do
-    echo "Harvesting $url..."
-    curl -s "http://localhost:8080/?url=$url" >> results.json
-done
-```
+* To harvest a list of repositories, you can loop through them sending requests to your local server.
+* See placeholder example in `harvest_barch.sh`
 
 ## 🧠 Data Model & Schema
 
-The output of this harvester is strictly typed according to the EDEN Schema.
+The output of this harvester is typed according to the EDEN Schema.
 
 * Context Definition:  [`schema/context.jsonld`](./schema/context.jsonld)
 * Defines the mapping to DCAT, Schema.org, and SKOS.
@@ -75,9 +68,12 @@ The output of this harvester is strictly typed according to the EDEN Schema.
 ## 🛠 Development
 
  Key Dependencies: 
-* `connexion[flask]`: Handles the API server and Swagger validation.
-* `rdflib`: Parses RDF/JSON-LD data.
-* `lxml`: Parses HTML meta tags.
-* `requests`: Fetches web pages.
-* Change how fields are mapped (e.g., mapping `dct:title` instead of `sdo:name`), edit:
+* `connexion[flask]`: Handles the API server and Swagger validation
+* `rdflib`: Parses RDF/JSON-LD data
+* `lxml`: Parses HTML meta tags
+* `requests`: Fetches web pages
+
+## Troubleshooting
+
+* To change how fields are mapped (e.g., mapping `dct:title` instead of `sdo:name`), edit:
 `repo_harvester_server/helper/MetadataHelper.py`
