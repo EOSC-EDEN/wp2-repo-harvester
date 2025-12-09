@@ -1,8 +1,19 @@
 import json
 import logging
+import re
+from pathlib import Path
+
 import rdflib
+from jsonschema.exceptions import ValidationError
 from rdflib import RDF, DCAT, DC, DCTERMS, FOAF, SKOS
 from lxml import html as lxml_html
+import os
+from repo_harvester_server.helper.GraphHelper import JSONGraph
+from repo_harvester_server.helper.SignPostingHelper import SignPostingHelper
+from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, REPO_INFO_QUERY, DCAT_EXPORT_QUERY
+from jsonschema import validate
+import jmespath
+import requests
 
 # Define Namespaces
 VCARD = rdflib.Namespace("http://www.w3.org/2006/vcard/ns#")
@@ -18,8 +29,15 @@ DCAT_IN_CATALOG = DCAT['inCatalog']
 logging.getLogger('rdflib.term').setLevel(logging.ERROR)
 
 class MetadataHelper:
-    def __init__(self):
-        pass
+    def __init__(self, catalog_url, catalog_html=None, catalog_header=None):
+        # Get the directory where the current script is located
+        helper_dir = os.path.dirname(os.path.abspath(__file__))
+        # Construct the absolute path to the xslt file
+        self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
+        self.catalog_url = catalog_url
+        self.catalog_html = catalog_html
+        self.catalog_header = catalog_header
+        self.signposting_helper = SignPostingHelper(self.catalog_url, self.catalog_html, self.catalog_header)
 
     def _fuzzy_value(self, g, subject, property_names):
         """Robustly finds a value by matching property URI endings."""
@@ -58,8 +76,10 @@ class MetadataHelper:
             doc = lxml_html.fromstring(html_content)
             desc = doc.xpath('//meta[@name="description"]/@content')
             if desc: metadata['description'] = desc[0].strip()
-            auth = doc.xpath('//meta[@name="author"]/@content')
-            if auth: metadata['publisher'] = {"name": auth[0].strip()}
+            pub = doc.xpath('//meta[@name="publisher"]/@content')
+            if pub: metadata['publisher'] = pub[0].strip()
+            tit = doc.xpath('//meta[@name="title"]/@content')
+            if tit: metadata['title'] = tit[0].strip()
         except Exception: pass
         return {k: v for k, v in metadata.items() if v}
 
@@ -129,6 +149,7 @@ class MetadataHelper:
         return process_list
 
     def _extract_services(self, g, catalog_node):
+        service_dict = {}
         services_list = []
         service_nodes = list(g.objects(catalog_node, DCAT.service)) + \
                         self._fuzzy_objects(g, catalog_node, 'service')
@@ -160,11 +181,22 @@ class MetadataHelper:
 
             conforms = g.value(svc, DCTERMS.conformsTo)
             if conforms: svc_dict['conformsTo'] = str(conforms)
+
             fmt = g.value(svc, DCTERMS.format)
             if fmt: svc_dict['format'] = str(fmt)
 
+            title = g.value(svc, DCTERMS.title) or self._fuzzy_value(g, svc, 'name')
+            if title: svc_dict['title'] = str(title)
+
+            # merge schema.org and DCAT service specification according to FAIR-IMPACT 5.4 prototype
+            # dict should have same structure as fairicat dict
+            svc_dict['conforms_to'] = svc_dict['conformsTo'] or  svc_dict['documentation'] or svc_dict['description'] or None
+            svc_dict['endpoint_uri'] = svc_dict['endpointURL']
+            service_dict[svc_dict['endpointURL']] = svc_dict
+
             services_list.append(svc_dict)
-        return services_list
+        return service_dict
+        #return services_list
 
     def get_jsonld_metadata(self, jstr):
         metadata = {}
@@ -220,7 +252,7 @@ class MetadataHelper:
             print(f"Error processing JSON-LD: {e}")
         return metadata
 
-    def get_embedded_jsonld_metadata(self, html_content):
+    def get_embedded_jsonld_metadata(self, html_content, mode = 'rdflib'):
         metadata = {}
         if not isinstance(html_content, str): return metadata
         try:
@@ -230,14 +262,17 @@ class MetadataHelper:
                 if not script_content.strip(): continue
                 try:
                     json.loads(script_content)
-                    extracted = self.get_jsonld_metadata(script_content)
+                    if mode == 'rdflib':
+                        extracted = self.get_jsonld_metadata(script_content)
+                    else:
+                        extracted = self.get_jsonld_metadata_simple(script_content)
                     metadata.update(extracted)
                 except json.JSONDecodeError: continue
         except Exception as e:
             print(f"Loading embedded JSON-LD Error: {e}")
         return metadata
     
-    def get_linked_jsonld_metadata(self, typed_link):
+    def get_linked_jsonld_metadata(self, typed_link, mode = 'rdflib'):
         metadata = {}
         if 'http' in str(typed_link):
             try:
@@ -246,7 +281,111 @@ class MetadataHelper:
                 if resp.status_code == 200:
                     try:
                         ljson_str = json.dumps(resp.json())
-                        metadata = self.get_jsonld_metadata(ljson_str)
+                        if mode == 'rdflib':
+                            metadata = self.get_jsonld_metadata(ljson_str)
+                        else:
+                            metadata = self.get_jsonld_metadata_simple(ljson_str)
                     except json.JSONDecodeError: pass
             except Exception: pass
         return metadata
+
+    def get_sitemap_service_metadata(self):
+        metadata = {}
+        sitemap_service = {}
+        # cpp:024 Enabling Discovery
+        if self.catalog_url:
+            #option 1: in robots.txt
+            try:
+                r = requests.get(str(self.catalog_url).rstrip('/')+'/robots.txt')
+                if r.status_code == 200:
+                    m = re.search(r'^Sitemap:\s*(\S+)', r.text, re.MULTILINE)
+                    if m:
+                        sitemap_service =  {
+                            m.group(1):{
+                            'endpoint_uri': m.group(1),
+                            'conforms_to': 'https://www.sitemaps.org/protocol.html',  # only here because mime is id for feed type
+                            'output_format': 'application/xml'
+                            }
+                        }
+            except Exception as e:
+                print('FAILED TO GET SITEMAP SERVICE METADATA: ', e)
+            if sitemap_service:
+                metadata['services'] = sitemap_service
+                #print('SITEMAP LINKS: ', metadata)
+        return metadata
+
+    def get_feed_metadata(self):
+        metadata = {}
+        services = {}
+        #cpp:024 Enabling Discovery
+        #cpp:009 Metadata Extraction
+        feed_types = {'application/rss+xml':'https://www.rssboard.org/rss-specification',
+                      'application/atom+xml': 'https://www.ietf.org/rfc/rfc4287.txt'}
+        feed_links = self.signposting_helper.get_links(rel='alternate', type=list(feed_types.keys()))
+        for api_link in feed_links:
+            # services
+            if api_link.get('anchor') not in services:
+                services[api_link.get('link')] = {
+                    'endpoint_uri' : api_link.get('link'),
+                    'conforms_to' : feed_types.get(api_link.get('type')),
+                    #'conforms_to' : api_link.get('type'),  # only here because mime is id for feed type
+                    'title' : api_link.get('title'),
+                    'output_format' :  api_link.get('type')
+                }
+        if services:
+            metadata['services'] = services
+            #print('FEED LINKS: ', metadata)
+        return metadata
+
+    def get_fairicat_metadata(self):
+        metadata = {}
+        services = {}
+        self
+        fairicat_api_links = self.signposting_helper.get_links(rel=['service-doc', 'service-meta'])
+        for api_link in fairicat_api_links:
+            # services
+            if api_link.get('anchor') not in services:
+                services[api_link.get('anchor')] = {'endpoint_uri': api_link.get('anchor')}
+            if api_link.get('rel') == 'service-doc':
+                services[api_link.get('anchor')]['conforms_to'] = api_link.get('link')
+                if api_link.get('title'):
+                    services[api_link.get('anchor')]['title'] = api_link.get('title')
+            if api_link.get('rel') == 'service-meta':
+                services[api_link.get('anchor')]['service_desc'] = api_link.get('link')
+                if api_link.get('type'):
+                    services[api_link.get('anchor')]['output_format'] = api_link.get('type')
+        if services:
+            metadata['services'] = services
+        return metadata
+
+    def get_jsonld_metadata_simple(self, jstr):
+        # This method used the GraphHelper and JMESPATH instead of RDFlib
+        metadata = {}
+        if isinstance(jstr, str):
+            sg = JSONGraph()
+            sg.parse(jstr)
+            metadata = sg.query(REPO_INFO_QUERY)
+            services ={}
+            for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
+                #print('SIMPLE SERVICES:  ', json.dumps(service_node, indent=4))
+                service_res = jmespath.search(SERVICE_INFO_QUERY, service_node)
+                if service_res.get('endpoint_uri'):
+                    if service_res.get('type') == 'SearchAction':
+                        service_res['output_format'] = 'text/html'
+                        service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
+                    services[service_res.get('endpoint_uri')] = service_res
+            if services:
+                metadata['services'] = services
+        return metadata
+
+    def validate(self,  data, schema = None):
+        if not schema:
+            schema_path = Path(__file__).resolve().parent.parent / 'schema' / 'repo_schema.json'
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        try:
+            validate(instance=data, schema=schema)
+        except ValidationError as e:
+            print(e.message)
+
+    def export(self, metadata):
+        return jmespath.search(data=metadata, expression = DCAT_EXPORT_QUERY)
