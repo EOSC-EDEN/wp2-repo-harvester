@@ -1,0 +1,6 @@
+connexion[uvicorn,flask,swagger-ui]
+rdflib==7.4.0
+lxml==6.0.2
+requests>=2.30.0
+six
+python-dateutil
