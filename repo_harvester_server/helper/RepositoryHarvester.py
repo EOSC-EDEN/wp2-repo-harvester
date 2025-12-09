@@ -1,24 +1,59 @@
 import json
+from datetime import datetime
+
 import requests
 from lxml import etree
 from urllib.parse import urlparse
-from repo_harvester_server.helper.SignPostingHelper import SignPostingHelper
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 
 class CatalogMetadataHarvester:
+
+    # an internal vocab to indicate the sources of metadata
+    extractors = {
+        'embedded_jsonld': 'Embedded JSON-LD Metadata Extraction',
+        'meta_tags': 'Embedded Meta-Tags Metadata Extraction',
+        'linked_jsonld': 'Linked (signposting) JSON-LD Metadata Extraction',
+        'fairicat_services': 'FAIRiCAT / Linkset / API Catalog Discovery',
+        'feed_services': 'Feed (Atom/RSS) Service Discovery',
+        'sitemap_service': 'Sitemap Service Discovery',
+        'open_search': 'OpenSearch Service Discovery'
+    }
+
     def __init__(self, catalog_url):
         self.catalog_url = catalog_url
         self.catalog_html = None
-        self.signposting_links = []
-        self.metadata = {}
+        self.metadata = []
+        if not str(self.catalog_url).startswith('http'):
+            print('Invalid repo URI:', self.catalog_url)
+            return
 
-    def merge_metadata(self, new_metadata):
+            # Use a polite User-Agent for research harvesting
+        headers = {
+            'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+
+        try:
+            response = requests.get(self.catalog_url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                print(f"Failed to fetch {self.catalog_url}: Status {response.status_code}")
+                return
+
+            self.catalog_html = response.text
+            self.catalog_header = response.headers
+            self.metadata_helper = MetadataHelper(self.catalog_url, self.catalog_html, self.catalog_header)
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to fetch {self.catalog_url}: {e}")
+
+
+    def merge_metadata(self, new_metadata, source = None):
         """
-        Merges new metadata into the existing dictionary.
-        - Appends to lists (like services).
-        - Overwrites scalars if the new value is present.
+        Merges (rather adds) new metadata into a list of metadata objects.
+        Merging should later be done using the individual metadata /service graphs
         """
         if new_metadata:
+            self.metadata.append({'source': source, 'metadata': new_metadata})
+        '''if new_metadata:
             for key, value in new_metadata.items():
                 # For lists (services), append them
                 if key == 'services' and isinstance(value, list):
@@ -27,7 +62,7 @@ class CatalogMetadataHarvester:
                     self.metadata['services'].extend(value)
                 # For scalars (title, id), set if missing or overwrite
                 else:
-                    self.metadata[key] = value
+                    self.metadata[key] = value'''
 
     def harvest(self):
         """
@@ -38,9 +73,11 @@ class CatalogMetadataHarvester:
         self.harvest_self_hosted_metadata()
         
         # Fallback: If no title found via self-hosted, try Registry
-        if not self.metadata.get('title'):
-            print(f"Self-hosted harvest incomplete for {self.catalog_url}. Attempting Registry harvest...")
-            self.harvest_registry_metadata()
+        #if not self.metadata.get('title'):
+        #    print(f"Self-hosted harvest incomplete for {self.catalog_url}. Attempting Registry harvest...")
+        # TODO: uncomment later ;)
+        #    self.harvest_registry_metadata()
+        self.export()
 
     def harvest_registry_metadata(self):
         """
@@ -140,49 +177,65 @@ class CatalogMetadataHarvester:
         Harvests metadata directly from the repository landing page
         using Signposting, JSON-LD (Embedded/Linked), and HTML Meta tags.
         """
-        if not str(self.catalog_url).startswith('http'):
-            print('Invalid repo URI:', self.catalog_url)
-            return
+        mode = 'rdflib' #otherwise the GraphHelper will be used
+        if self.catalog_html:
+            try:
 
-        # Use a polite User-Agent for research harvesting
-        headers = {
-            'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        }
+                # 1. Signposting Extraction (Link headers, <link> tags)
 
-        try:
-            response = requests.get(self.catalog_url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                print(f"Failed to fetch {self.catalog_url}: Status {response.status_code}")
-                return
+                # 2. Metadata Extraction
+                # A1. Embedded JSON-LD
+                self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(self.catalog_html, mode), 'embedded_jsonld')
+                # A2. Embedded meta tags
+                self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(self.catalog_html), 'meta_tags')
 
-            self.catalog_html = response.text
-            self.catalog_header = response.headers
-            
-            # 1. Signposting Extraction (Link headers, <link> tags)
-            signposting = SignPostingHelper(self.catalog_url, self.catalog_html, self.catalog_header)
-            self.signposting_links = signposting.links
-            print('LINKS: ', self.signposting_links)
-            
-            # 2. Metadata Extraction
-            helper = MetadataHelper()
-            
-            # A. Embedded JSON-LD
-            self.merge_metadata(helper.get_embedded_jsonld_metadata(self.catalog_html))
-            print('EMBEDDED METADATA extracted.')
-            
-            # B. Linked JSON-LD (via 'describedby' links)
-            for link in signposting.get_links('describedby', 'application/ld+json'):
-                self.merge_metadata(helper.get_linked_jsonld_metadata(link.get('link')))
-            
-            # C. FAIRiCAT / Linksets
-            self.merge_metadata(signposting.get_fairicat_metadata())
-            
-            # D. Fallback: HTML Meta Tags (if no title found yet)
-            if not self.metadata.get('title'):
-                self.merge_metadata(helper.get_html_meta_tags_metadata(self.catalog_html))
+                print('EMBEDDED METADATA extracted.')
 
-            print('MERGED METADATA: ', json.dumps(self.metadata, indent=4))
+                # B. Linked JSON-LD (via 'describedby' links)
+                for link in self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json'):
+                    self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
 
-        except Exception as e:
-            print(f"Self-Hosted Harvest Error: {e}")
+                # C. FAIRiCAT / Linksets
+                self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
+
+                # D. FEED Services
+                self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
+
+                # E. Sitemap Service
+                self.merge_metadata(self.metadata_helper.get_sitemap_service_metadata(), 'sitemap_service')
+
+                print('MERGED METADATA: ', json.dumps(self.metadata, indent=4))
+
+            except Exception as e:
+                print(f"Self-Hosted Harvest Error: {e}")
+        else:
+            print('NO METADATA found at :', self.catalog_url)
+
+    def export(self):
+        """
+        Exports harvested metadata to DCAT JSON-LD.
+        It uses the MetadataHelper export method which is based on JMESPATH see: JMESPATHQueries.py
+        Some additional metadata is added here to the resulting dict
+        """
+        export_metadata = {}
+        if self.metadata:
+            for m in self.metadata:
+                metadata = m.get('metadata', {})
+                source = m.get('source')
+                if  metadata.get('services'):
+                    metadata['services'] =  list(metadata['services'].values())
+                export_metadata = self.metadata_helper.export(metadata)
+
+
+                if export_metadata.get('prov:hadPrimarySource'):
+                    export_metadata['prov:hadPrimarySource']['@id'] =  str(self.catalog_url)
+                now = datetime.now()
+                date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
+                if export_metadata.get('prov:wasGeneratedBy'):
+                    export_metadata['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
+                    export_metadata['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source)
+                    export_metadata['prov:wasGeneratedBy']['@id'] = 'eden://harvester/'+source
+                export_metadata['dct:issued'] = date_time
+                export_metadata['@id'] = 'eden://harvester/'+str(source)+'/'+str(self.catalog_url)
+                print('DCAT: ', json.dumps(export_metadata, indent=4))
+        return export_metadata
