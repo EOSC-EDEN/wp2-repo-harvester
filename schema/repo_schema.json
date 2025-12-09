@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Superficial Repository Check Schema",
+  "type": "object",
+
+  "properties": {
+    "title": {},
+    "resource_type": {},
+    "publisher": {},
+    "description": {},
+    "language": {},
+    "country": {},
+    "contact": {},
+    "license": {},
+
+    "services": {
+      "type": "object",
+      "description": "Loose structure: service URL → service description",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "endpoint_uri": {},
+          "type": {},
+          "output_format": {},
+          "conforms_to": {},
+          "source": {},
+          "title": {}
+        },
+        "required": ["endpoint_uri"],
+        "additionalProperties": true
+      }
+    }
+  },
+
+  "required": [
+    "title"
+  ],
+
+  "additionalProperties": false
+}
