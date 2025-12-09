@@ -17,28 +17,6 @@ class SignPostingHelper:
         self.links = []
         self.set_links()
 
-    def get_fairicat_metadata(self):
-        metadata = {}
-        services = {}
-        fairicat_api_links = self.get_links(rel=['service-doc', 'service-meta'])
-        for api_link in fairicat_api_links:
-            # services
-            if api_link.get('anchor') not in services:
-                services[api_link.get('anchor')] = {'endpoint_uri' : api_link.get('anchor'),
-                                                    'source': 'fairicat'}
-            if api_link.get('rel') == 'service-doc':
-                services[api_link.get('anchor')]['conforms_to'] = api_link.get('link')
-                if api_link.get('title'):
-                    services[api_link.get('anchor')]['title'] = api_link.get('title')
-            if api_link.get('rel') == 'service-meta':
-                services[api_link.get('anchor')]['service_desc'] = api_link.get('link')
-                if api_link.get('type'):
-                    services[api_link.get('anchor')]['output_format'] = api_link.get('type')
-            #if api_link.get('rel') == 'service-desc':
-
-        if services:
-            metadata['services'] = list(services.values())
-        return metadata
 
     def get_linksets(self):
         linksets =  self.get_links('linkset')
@@ -57,7 +35,7 @@ class SignPostingHelper:
                 if isinstance(link_dict.get('linkset'), list):
                     for linkset in link_dict.get('linkset'):
                         if isinstance(linkset, dict):
-                            print(linkset)
+                            #print(linkset)
                             for linktype, links in linkset.items():
                                 if linktype == "anchor":
                                     anchor = links
@@ -91,7 +69,7 @@ class SignPostingHelper:
         self.set_linkset_links(self.get_api_linksets())
         unique_links =list({d["link"]: d for d in self.links}.values())
         self.links = unique_links
-        print('LINKS: ', self.links)
+        #print('LINKS: ', self.links)
 
     def get_links(self, rel='describedby', type=None):
         if isinstance(rel, str):
