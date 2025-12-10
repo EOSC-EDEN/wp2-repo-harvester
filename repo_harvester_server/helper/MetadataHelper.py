@@ -5,7 +5,7 @@ from pathlib import Path
 
 import rdflib
 from jsonschema.exceptions import ValidationError
-from rdflib import RDF, DCAT, DC, DCTERMS, FOAF, SKOS
+from rdflib import RDF, DCAT, DC, DCTERMS, FOAF, SKOS, URIRef
 from lxml import html as lxml_html
 import os
 from repo_harvester_server.helper.GraphHelper import JSONGraph
@@ -24,7 +24,8 @@ OBO = rdflib.Namespace("http://purl.obolibrary.org/obo/")
 SDO_HTTPS = rdflib.Namespace("https://schema.org/")
 SDO_HTTP = rdflib.Namespace("http://schema.org/")
 
-DCAT_IN_CATALOG = DCAT['inCatalog']
+# Custom DCAT term - explicitly define as URIRef to avoid UserWarning
+DCAT_IN_CATALOG = URIRef("http://www.w3.org/ns/dcat#inCatalog")
 
 logging.getLogger('rdflib.term').setLevel(logging.ERROR)
 
@@ -190,8 +191,8 @@ class MetadataHelper:
 
             # merge schema.org and DCAT service specification according to FAIR-IMPACT 5.4 prototype
             # dict should have same structure as fairicat dict
-            svc_dict['conforms_to'] = svc_dict['conformsTo'] or  svc_dict['documentation'] or svc_dict['description'] or None
-            svc_dict['endpoint_uri'] = svc_dict['endpointURL']
+            svc_dict['conforms_to'] = svc_dict.get('conformsTo') or  svc_dict.get('documentation') or svc_dict.get('description') or None
+            svc_dict['endpoint_uri'] = svc_dict.get('endpointURL')
             service_dict[svc_dict['endpointURL']] = svc_dict
 
             services_list.append(svc_dict)
