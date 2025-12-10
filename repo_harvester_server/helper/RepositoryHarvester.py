@@ -185,9 +185,9 @@ class CatalogMetadataHarvester:
 
                 # 2. Metadata Extraction
                 # A1. Embedded JSON-LD
-                self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(self.catalog_html, mode), 'embedded_jsonld')
+                self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(mode), 'embedded_jsonld')
                 # A2. Embedded meta tags
-                self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(self.catalog_html), 'meta_tags')
+                self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(), 'meta_tags')
 
                 print('EMBEDDED METADATA extracted.')
 

@@ -69,11 +69,11 @@ class MetadataHelper:
                     results.append(o)
         return results
 
-    def get_html_meta_tags_metadata(self, html_content):
+    def get_html_meta_tags_metadata(self):
         metadata = {}
-        if not isinstance(html_content, str) or not html_content: return metadata
+        if not isinstance(self.catalog_html, str) or not self.catalog_html: return metadata
         try:
-            doc = lxml_html.fromstring(html_content)
+            doc = lxml_html.fromstring(self.catalog_html)
             desc = doc.xpath('//meta[@name="description"]/@content')
             if desc: metadata['description'] = desc[0].strip()
             pub = doc.xpath('//meta[@name="publisher"]/@content')
@@ -252,11 +252,11 @@ class MetadataHelper:
             print(f"Error processing JSON-LD: {e}")
         return metadata
 
-    def get_embedded_jsonld_metadata(self, html_content, mode = 'rdflib'):
+    def get_embedded_jsonld_metadata(self,  mode = 'rdflib'):
         metadata = {}
-        if not isinstance(html_content, str): return metadata
+        if not isinstance(self.catalog_html, str): return metadata
         try:
-            doc = lxml_html.fromstring(html_content)
+            doc = lxml_html.fromstring(self.catalog_html)
             scripts = doc.xpath('//script[@type="application/ld+json"]/text()')
             for script_content in scripts:
                 if not script_content.strip(): continue
