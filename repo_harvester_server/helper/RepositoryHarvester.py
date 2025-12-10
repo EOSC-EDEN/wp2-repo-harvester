@@ -5,6 +5,7 @@ import requests
 from lxml import etree
 from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
+from repo_harvester_server.config import FUSEKI_PATH
 
 class CatalogMetadataHarvester:
 
@@ -18,6 +19,7 @@ class CatalogMetadataHarvester:
         'sitemap_service': 'Sitemap Service Discovery',
         'open_search': 'OpenSearch Service Discovery'
     }
+
 
     def __init__(self, catalog_url):
         self.catalog_url = catalog_url
@@ -51,7 +53,23 @@ class CatalogMetadataHarvester:
         Merges (rather adds) new metadata into a list of metadata objects.
         Merging should later be done using the individual metadata /service graphs
         """
+
+        def clean_none(obj):
+            """
+            Recursively remove keys with value None from dictionaries and lists.
+            """
+            if isinstance(obj, dict):
+                return {
+                    k: clean_none(v)
+                    for k, v in obj.items()
+                    if v is not None
+                }
+            elif isinstance(obj, list):
+                return [clean_none(item) for item in obj]
+            else:
+                return obj
         if new_metadata:
+            new_metadata = clean_none(new_metadata)
             self.metadata.append({'source': source, 'metadata': new_metadata})
         '''if new_metadata:
             for key, value in new_metadata.items():
@@ -211,7 +229,7 @@ class CatalogMetadataHarvester:
         else:
             print('NO METADATA found at :', self.catalog_url)
 
-    def export(self):
+    def export(self, save = True):
         """
         Exports harvested metadata to DCAT JSON-LD.
         It uses the MetadataHelper export method which is based on JMESPATH see: JMESPATHQueries.py
@@ -222,20 +240,49 @@ class CatalogMetadataHarvester:
             for m in self.metadata:
                 metadata = m.get('metadata', {})
                 source = m.get('source')
+                graph_id = 'eden://harvester/'+str(source)+'/'+str(self.catalog_url)
+
                 if  metadata.get('services'):
                     metadata['services'] =  list(metadata['services'].values())
-                export_metadata = self.metadata_helper.export(metadata)
+                export_metadata[graph_id] = self.metadata_helper.export(metadata)
 
 
-                if export_metadata.get('prov:hadPrimarySource'):
-                    export_metadata['prov:hadPrimarySource']['@id'] =  str(self.catalog_url)
+                if export_metadata[graph_id].get('prov:hadPrimarySource'):
+                    export_metadata[graph_id]['prov:hadPrimarySource']['@id'] =  str(self.catalog_url)
                 now = datetime.now()
                 date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
-                if export_metadata.get('prov:wasGeneratedBy'):
-                    export_metadata['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
-                    export_metadata['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source)
-                    export_metadata['prov:wasGeneratedBy']['@id'] = 'eden://harvester/'+source
-                export_metadata['dct:issued'] = date_time
-                export_metadata['@id'] = 'eden://harvester/'+str(source)+'/'+str(self.catalog_url)
-                print('DCAT: ', json.dumps(export_metadata, indent=4))
+                if export_metadata[graph_id].get('prov:wasGeneratedBy'):
+                    export_metadata[graph_id]['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
+                    export_metadata[graph_id]['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source)
+                    export_metadata[graph_id]['prov:wasGeneratedBy']['@id'] = 'eden://harvester/'+source
+                export_metadata[graph_id]['dct:issued'] = date_time
+                export_metadata[graph_id]['@id'] = graph_id
+                if save:
+                    print(json.dumps(export_metadata[graph_id]))
+                    self.save(graph_id, json.dumps(export_metadata[graph_id]))
+                    print('tried to save: ', graph_id)
+                #print('DCAT: ', json.dumps(export_metadata, indent=4))
         return export_metadata
+
+    def save(self, graph_uri, graph_jsonld):
+        """
+        Saves a named graph in a JENA FUSEKI triple store
+        :param graph_uri:
+        :param graph_jsonld:
+        :return:
+        """
+        #TODO: HTTP Basic Auth
+        #TODO: check if server is running etc..
+        headers = {
+            "Content-Type": "application/ld+json"
+        }
+
+        # Use graph store protocol
+        response = requests.put(
+            FUSEKI_PATH,
+            params={"graph": graph_uri},
+            data=graph_jsonld,
+            headers=headers
+        )
+        print("Status:", response.status_code)
+        print(response.text)
