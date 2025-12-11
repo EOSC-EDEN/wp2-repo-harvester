@@ -1,12 +1,10 @@
 import json
 from datetime import datetime
 import requests
-from lxml import etree
 from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.config import FUSEKI_PATH
 
-from .MetadataHelper import MetadataHelper
 from .Re3DataHarvester import Re3DataHarvester
 from .FAIRsharingHarvester import FAIRsharingHarvester
 
@@ -15,7 +13,6 @@ class RepositoryHarvester:
     The main orchestrator for the harvesting process.
     It coordinates the self-hosted harvesting and the registry harvesting.
     """
-    # An internal vocabulary to map source keys to human-readable names
     extractors = {
         'embedded_jsonld': 'Embedded JSON-LD Metadata Extraction',
         'meta_tags': 'Embedded Meta-Tags Metadata Extraction',
@@ -27,7 +24,6 @@ class RepositoryHarvester:
         're3data': 're3data.org Registry Harvesting',
         'fairsharing': 'FAIRsharing.org Registry Harvesting'
     }
-
 
     def __init__(self, catalog_url):
         self.catalog_url = catalog_url
@@ -55,17 +51,9 @@ class RepositoryHarvester:
         """
         Adds a new metadata chunk to the main list, tagging it with its source.
         """
-
         def clean_none(obj):
-            """
-            Recursively remove keys with value None from dictionaries and lists.
-            """
             if isinstance(obj, dict):
-                return {
-                    k: clean_none(v)
-                    for k, v in obj.items()
-                    if v is not None
-                }
+                return {k: clean_none(v) for k, v in obj.items() if v is not None}
             elif isinstance(obj, list):
                 return [clean_none(item) for item in obj]
             else:
@@ -76,10 +64,7 @@ class RepositoryHarvester:
 
     def harvest(self):
         """
-        Main entry point.
-        1. Harvests directly from the website (Self-Hosted).
-        2. Harvests from external registries (re3data, FAIRsharing).
-        3. Exports the collected metadata.
+        Main entry point for the harvesting process.
         """
         self.harvest_self_hosted_metadata()
         self.harvest_registry_metadata()
@@ -91,13 +76,11 @@ class RepositoryHarvester:
         """
         print("--- Starting Registry Harvesting ---")
         
-        # Harvest from re3data
         re3data_harvester = Re3DataHarvester()
         re3data_meta = re3data_harvester.harvest(self.catalog_url)
         print(f"RAW re3data METADATA: {json.dumps(re3data_meta, indent=4)}")
         self.merge_metadata(re3data_meta, 're3data')
 
-        # Harvest from FAIRsharing
         fairsharing_harvester = FAIRsharingHarvester()
         fairsharing_meta = fairsharing_harvester.harvest(self.catalog_url)
         print(f"RAW FAIRsharing METADATA: {json.dumps(fairsharing_meta, indent=4)}")
@@ -112,29 +95,22 @@ class RepositoryHarvester:
         if not self.catalog_html or not self.metadata_helper:
             print('Cannot perform self-hosted harvest; initial fetch failed.')
             return
-
+        
         print("--- Starting Self-Hosted Harvesting ---")
-        mode = 'rdflib'  # Can be switched to 'graph' if GraphHelper is used later
+        mode = 'rdflib'
         try:
-            # Embedded Metadata
             self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(mode), 'embedded_jsonld')
             self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(), 'meta_tags')
-
-            # Linked Metadata (Signposting)
             for link in self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json'):
                 self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
-
-            # Service Discovery
             self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
             self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
             self.merge_metadata(self.metadata_helper.get_sitemap_service_metadata(), 'sitemap_service')
-
             print("--- Finished Self-Hosted Harvesting ---")
-
         except Exception as e:
             print(f"An error occurred during self-hosted harvest: {e}")
 
-    def export(self, save = True):
+    def export(self, save=False):
         """
         Transforms and exports each harvested metadata chunk to DCAT JSON-LD.
         """
@@ -149,78 +125,50 @@ class RepositoryHarvester:
             source = m.get('source')
             if not metadata_chunk:
                 continue
-        export_metadata = {}
-        if self.metadata:
-            for m in self.metadata:
-                metadata = m.get('metadata', {})
-                source = m.get('source')
-                graph_id = 'eden://harvester/'+str(source)+'/'+str(self.catalog_url)
 
-                if  metadata.get('services'):
-                    metadata['services'] =  list(metadata['services'].values())
-                export_metadata[graph_id] = self.metadata_helper.export(metadata)
-
-            # The MetadataHelper's export method uses JMESPath to map the raw
-            # metadata to a standardized DCAT structure.
             export_record = self.metadata_helper.export(metadata_chunk)
-
-            # If the export resulted in a valid record, enrich it with provenance.
+            
             primary_source = export_record.get('prov:hadPrimarySource')
             if primary_source and (primary_source.get('dct:title') or primary_source.get('dct:description')):
-                if export_metadata[graph_id].get('prov:hadPrimarySource'):
-                    export_metadata[graph_id]['prov:hadPrimarySource']['@id'] =  str(self.catalog_url)
                 now = datetime.now()
                 date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
+                graph_id = f'eden://harvester/{source}/{self.catalog_url}'
 
-                # Add provenance info
-                export_record['prov:hadPrimarySource']['@id'] = self.catalog_url
-                export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
-                export_record['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source, "Unknown Harvester")
-                export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
+                export_record['@id'] = graph_id
                 export_record['dct:issued'] = date_time
-                export_record['@id'] = f'eden://harvester/{source}/{self.catalog_url}'
+                
+                if 'prov:wasGeneratedBy' in export_record:
+                    export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
+                    export_record['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source, "Unknown Harvester")
+                    export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
 
-                print(f"Successfully exported record from source: {source}")
-                #print('DCAT Record: ', json.dumps(export_record, indent=4))
+                if 'prov:hadPrimarySource' in export_record:
+                     export_record['prov:hadPrimarySource']['@id'] = self.catalog_url
+
                 final_records.append(export_record)
+                print(f"Successfully processed record from source: {source}")
+
+                if save:
+                    self.save(graph_id, json.dumps(export_record))
             else:
                 print(f"Skipping export for source '{source}': No meaningful data to map.")
-
+        
         print("--- Finished Export ---")
         return final_records
 
-                if export_metadata[graph_id].get('prov:wasGeneratedBy'):
-                    export_metadata[graph_id]['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
-                    export_metadata[graph_id]['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source)
-                    export_metadata[graph_id]['prov:wasGeneratedBy']['@id'] = 'eden://harvester/'+source
-                export_metadata[graph_id]['dct:issued'] = date_time
-                export_metadata[graph_id]['@id'] = graph_id
-                if save:
-                    print(json.dumps(export_metadata[graph_id]))
-                    self.save(graph_id, json.dumps(export_metadata[graph_id]))
-                    print('tried to save: ', graph_id)
-                #print('DCAT: ', json.dumps(export_metadata, indent=4))
-        return export_metadata
-
     def save(self, graph_uri, graph_jsonld):
         """
-        Saves a named graph in a JENA FUSEKI triple store
-        :param graph_uri:
-        :param graph_jsonld:
-        :return:
+        Saves a named graph in a JENA FUSEKI triple store.
         """
-        #TODO: HTTP Basic Auth
-        #TODO: check if server is running etc..
-        headers = {
-            "Content-Type": "application/ld+json"
-        }
-
-        # Use graph store protocol
-        response = requests.put(
-            FUSEKI_PATH,
-            params={"graph": graph_uri},
-            data=graph_jsonld,
-            headers=headers
-        )
-        print("Status:", response.status_code)
-        print(response.text)
+        headers = {"Content-Type": "application/ld+json"}
+        try:
+            response = requests.put(
+                FUSEKI_PATH,
+                params={"graph": graph_uri},
+                data=graph_jsonld,
+                headers=headers
+            )
+            response.raise_for_status()
+            print(f"Successfully saved graph {graph_uri} to Fuseki. Status: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to save graph {graph_uri} to Fuseki: {e}")
