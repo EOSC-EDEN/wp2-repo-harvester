@@ -1,15 +1,18 @@
 import json
 from datetime import datetime
-
 import requests
-from lxml import etree
 from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.config import FUSEKI_PATH
 
-class CatalogMetadataHarvester:
+from .Re3DataHarvester import Re3DataHarvester
+from .FAIRsharingHarvester import FAIRsharingHarvester
 
-    # an internal vocab to indicate the sources of metadata
+class RepositoryHarvester:
+    """
+    The main orchestrator for the harvesting process.
+    It coordinates the self-hosted harvesting and the registry harvesting.
+    """
     extractors = {
         'embedded_jsonld': 'Embedded JSON-LD Metadata Extraction',
         'meta_tags': 'Embedded Meta-Tags Metadata Extraction',
@@ -17,53 +20,40 @@ class CatalogMetadataHarvester:
         'fairicat_services': 'FAIRiCAT / Linkset / API Catalog Discovery',
         'feed_services': 'Feed (Atom/RSS) Service Discovery',
         'sitemap_service': 'Sitemap Service Discovery',
-        'open_search': 'OpenSearch Service Discovery'
+        'open_search': 'OpenSearch Service Discovery',
+        're3data': 're3data.org Registry Harvesting',
+        'fairsharing': 'FAIRsharing.org Registry Harvesting'
     }
-
 
     def __init__(self, catalog_url):
         self.catalog_url = catalog_url
         self.catalog_html = None
         self.metadata = []
+        self.metadata_helper = None
+
         if not str(self.catalog_url).startswith('http'):
             print('Invalid repo URI:', self.catalog_url)
             return
 
-            # Use a polite User-Agent for research harvesting
         headers = {
             'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
-
         try:
             response = requests.get(self.catalog_url, headers=headers, timeout=10)
-            if response.status_code != 200:
-                print(f"Failed to fetch {self.catalog_url}: Status {response.status_code}")
-                return
-
+            response.raise_for_status()
             self.catalog_html = response.text
-            self.catalog_header = response.headers
-            self.metadata_helper = MetadataHelper(self.catalog_url, self.catalog_html, self.catalog_header)
+            self.metadata_helper = MetadataHelper(self.catalog_url, response.text, response.headers)
         except requests.exceptions.RequestException as e:
             print(f"Failed to fetch {self.catalog_url}: {e}")
 
-
-    def merge_metadata(self, new_metadata, source = None):
+    def merge_metadata(self, new_metadata, source):
         """
-        Merges (rather adds) new metadata into a list of metadata objects.
-        Merging should later be done using the individual metadata /service graphs
+        Adds a new metadata chunk to the main list, tagging it with its source.
         """
-
         def clean_none(obj):
-            """
-            Recursively remove keys with value None from dictionaries and lists.
-            """
             if isinstance(obj, dict):
-                return {
-                    k: clean_none(v)
-                    for k, v in obj.items()
-                    if v is not None
-                }
+                return {k: clean_none(v) for k, v in obj.items() if v is not None}
             elif isinstance(obj, list):
                 return [clean_none(item) for item in obj]
             else:
@@ -71,218 +61,114 @@ class CatalogMetadataHarvester:
         if new_metadata:
             new_metadata = clean_none(new_metadata)
             self.metadata.append({'source': source, 'metadata': new_metadata})
-        '''if new_metadata:
-            for key, value in new_metadata.items():
-                # For lists (services), append them
-                if key == 'services' and isinstance(value, list):
-                    if 'services' not in self.metadata:
-                        self.metadata['services'] = []
-                    self.metadata['services'].extend(value)
-                # For scalars (title, id), set if missing or overwrite
-                else:
-                    self.metadata[key] = value'''
 
     def harvest(self):
         """
-        Main entry point.
-        1. Tries to harvest directly from the website (Self-Hosted).
-        2. If that fails to find a Title, falls back to re3data (Registry).
+        Main entry point for the harvesting process.
         """
         self.harvest_self_hosted_metadata()
-        
-        # Fallback: If no title found via self-hosted, try Registry
-        #if not self.metadata.get('title'):
-        #    print(f"Self-hosted harvest incomplete for {self.catalog_url}. Attempting Registry harvest...")
-        # TODO: uncomment later ;)
-        #    self.harvest_registry_metadata()
-        self.export()
+        self.harvest_registry_metadata()
+        return self.export()
 
     def harvest_registry_metadata(self):
         """
-        Harvests metadata from the re3data.org API.
+        Orchestrates harvesting from all configured external registries.
         """
-        try:
-            # Strategy 1: Search by full URL
-            if self._search_re3data(self.catalog_url):
-                return
-
-            # Strategy 2: Search by Domain only.
-            # This helps if re3data indexed 'http' but we have 'https', 
-            # or if the path varies slightly (e.g. ssh.datastations.nl).
-            domain = urlparse(self.catalog_url).netloc
-            if domain:
-                print(f"Retrying re3data search with domain: {domain}")
-                self._search_re3data(domain)
-                        
-        except Exception as e:
-            print(f"Registry Harvest Error: {e}")
-
-    def _search_re3data(self, query):
-        """
-        Helper to search re3data API and fetch details for the first match.
-        Returns True if a match was found and parsed.
-        """
-        api_url = f"https://www.re3data.org/api/beta/repositories?query={query}"
-        resp = requests.get(api_url, timeout=10)
+        print("--- Starting Registry Harvesting ---")
         
-        if resp.status_code != 200:
-            return False
-        
-        try:
-            root = etree.fromstring(resp.content)
-            # Namespace is required for re3data XML
-            ns = {"r3d": "http://www.re3data.org/schema/2-2"}
-            
-            # Find the first repository link
-            repo_link = root.find(".//r3d:link", ns)
-            if repo_link is not None:
-                href = repo_link.get("href")
-                print(f"Found re3data entry: {href}")
-                self._fetch_re3data_details(href)
-                return True
-        except Exception as e:
-            print(f"Error parsing re3data search result: {e}")
-            
-        return False
+        re3data_harvester = Re3DataHarvester()
+        re3data_meta = re3data_harvester.harvest(self.catalog_url)
+        print(f"RAW re3data METADATA: {json.dumps(re3data_meta, indent=4)}")
+        self.merge_metadata(re3data_meta, 're3data')
 
-    def _fetch_re3data_details(self, url):
-        """
-        Fetches the detailed XML for a specific repository from re3data
-        and maps it to our EDEN Schema.
-        """
-        resp = requests.get(url, timeout=10)
-        if resp.status_code == 200:
-            try:
-                root = etree.fromstring(resp.content)
-                ns = {"r3d": "http://www.re3data.org/schema/2-2"}
-                
-                # Extract Title
-                name = root.find(".//r3d:repositoryName", ns)
-                if name is not None:
-                    self.metadata['title'] = name.text
-                
-                # Extract Description
-                desc = root.find(".//r3d:description", ns)
-                if desc is not None:
-                    self.metadata['description'] = desc.text
-                
-                # Extract re3data ID
-                r3d_id = root.find(".//r3d:re3data.orgIdentifier", ns)
-                if r3d_id is not None:
-                    self.metadata['re3dataID'] = r3d_id.text
-                
-                # Extract Publisher (Institution)
-                inst = root.find(".//r3d:institutionName", ns)
-                if inst is not None:
-                    self.metadata['publisher'] = {
-                        "type": "org:Organization",
-                        "name": inst.text
-                    }
+        fairsharing_harvester = FAIRsharingHarvester()
+        fairsharing_meta = fairsharing_harvester.harvest(self.catalog_url)
+        print(f"RAW FAIRsharing METADATA: {json.dumps(fairsharing_meta, indent=4)}")
+        self.merge_metadata(fairsharing_meta, 'fairsharing')
 
-                # Extract Landing Page and set ID
-                url_node = root.find(".//r3d:repositoryURL", ns)
-                if url_node is not None:
-                    self.metadata['landingPage'] = url_node.text
-                    # Use Landing Page as ID if we don't have one
-                    if not self.metadata.get('id'):
-                        self.metadata['id'] = url_node.text
-
-            except Exception as e:
-                print(f"Error parsing re3data details: {e}")
+        print("--- Finished Registry Harvesting ---")
 
     def harvest_self_hosted_metadata(self):
         """
-        Harvests metadata directly from the repository landing page
-        using Signposting, JSON-LD (Embedded/Linked), and HTML Meta tags.
+        Harvests metadata directly from the repository landing page.
         """
-        mode = 'rdflib' #otherwise the GraphHelper will be used
-        if self.catalog_html:
-            try:
+        if not self.catalog_html or not self.metadata_helper:
+            print('Cannot perform self-hosted harvest; initial fetch failed.')
+            return
+        
+        print("--- Starting Self-Hosted Harvesting ---")
+        mode = 'rdflib'
+        try:
+            self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(mode), 'embedded_jsonld')
+            self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(), 'meta_tags')
+            for link in self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json'):
+                self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
+            self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
+            self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
+            self.merge_metadata(self.metadata_helper.get_sitemap_service_metadata(), 'sitemap_service')
+            print("--- Finished Self-Hosted Harvesting ---")
+        except Exception as e:
+            print(f"An error occurred during self-hosted harvest: {e}")
 
-                # 1. Signposting Extraction (Link headers, <link> tags)
-
-                # 2. Metadata Extraction
-                # A1. Embedded JSON-LD
-                self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(mode), 'embedded_jsonld')
-                # A2. Embedded meta tags
-                self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(), 'meta_tags')
-
-                print('EMBEDDED METADATA extracted.')
-
-                # B. Linked JSON-LD (via 'describedby' links)
-                for link in self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json'):
-                    self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
-
-                # C. FAIRiCAT / Linksets
-                self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
-
-                # D. FEED Services
-                self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
-
-                # E. Sitemap Service
-                self.merge_metadata(self.metadata_helper.get_sitemap_service_metadata(), 'sitemap_service')
-
-                print('MERGED METADATA: ', json.dumps(self.metadata, indent=4))
-
-            except Exception as e:
-                print(f"Self-Hosted Harvest Error: {e}")
-        else:
-            print('NO METADATA found at :', self.catalog_url)
-
-    def export(self, save = True):
+    def export(self, save=False):
         """
-        Exports harvested metadata to DCAT JSON-LD.
-        It uses the MetadataHelper export method which is based on JMESPATH see: JMESPATHQueries.py
-        Some additional metadata is added here to the resulting dict
+        Transforms and exports each harvested metadata chunk to DCAT JSON-LD.
         """
-        export_metadata = {}
-        if self.metadata:
-            for m in self.metadata:
-                metadata = m.get('metadata', {})
-                source = m.get('source')
-                graph_id = 'eden://harvester/'+str(source)+'/'+str(self.catalog_url)
+        print("--- Starting Export ---")
+        final_records = []
+        if not self.metadata:
+            print("No metadata was harvested, nothing to export.")
+            return final_records
 
-                if  metadata.get('services'):
-                    metadata['services'] =  list(metadata['services'].values())
-                export_metadata[graph_id] = self.metadata_helper.export(metadata)
+        for m in self.metadata:
+            metadata_chunk = m.get('metadata')
+            source = m.get('source')
+            if not metadata_chunk:
+                continue
 
-
-                if export_metadata[graph_id].get('prov:hadPrimarySource'):
-                    export_metadata[graph_id]['prov:hadPrimarySource']['@id'] =  str(self.catalog_url)
+            export_record = self.metadata_helper.export(metadata_chunk)
+            
+            primary_source = export_record.get('prov:hadPrimarySource')
+            if primary_source and (primary_source.get('dct:title') or primary_source.get('dct:description')):
                 now = datetime.now()
                 date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
-                if export_metadata[graph_id].get('prov:wasGeneratedBy'):
-                    export_metadata[graph_id]['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
-                    export_metadata[graph_id]['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source)
-                    export_metadata[graph_id]['prov:wasGeneratedBy']['@id'] = 'eden://harvester/'+source
-                export_metadata[graph_id]['dct:issued'] = date_time
-                export_metadata[graph_id]['@id'] = graph_id
+                graph_id = f'eden://harvester/{source}/{self.catalog_url}'
+
+                export_record['@id'] = graph_id
+                export_record['dct:issued'] = date_time
+                
+                if 'prov:wasGeneratedBy' in export_record:
+                    export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
+                    export_record['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source, "Unknown Harvester")
+                    export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
+
+                if 'prov:hadPrimarySource' in export_record:
+                     export_record['prov:hadPrimarySource']['@id'] = self.catalog_url
+
+                final_records.append(export_record)
+                print(f"Successfully processed record from source: {source}")
+
                 if save:
-                    print(json.dumps(export_metadata[graph_id]))
-                    self.save(graph_id, json.dumps(export_metadata[graph_id]))
-                    print('tried to save: ', graph_id)
-                #print('DCAT: ', json.dumps(export_metadata, indent=4))
-        return export_metadata
+                    self.save(graph_id, json.dumps(export_record))
+            else:
+                print(f"Skipping export for source '{source}': No meaningful data to map.")
+        
+        print("--- Finished Export ---")
+        return final_records
 
     def save(self, graph_uri, graph_jsonld):
         """
-        Saves a named graph in a JENA FUSEKI triple store
-        :param graph_uri:
-        :param graph_jsonld:
-        :return:
+        Saves a named graph in a JENA FUSEKI triple store.
         """
-        #TODO: HTTP Basic Auth
-        #TODO: check if server is running etc..
-        headers = {
-            "Content-Type": "application/ld+json"
-        }
-
-        # Use graph store protocol
-        response = requests.put(
-            FUSEKI_PATH,
-            params={"graph": graph_uri},
-            data=graph_jsonld,
-            headers=headers
-        )
-        print("Status:", response.status_code)
-        print(response.text)
+        headers = {"Content-Type": "application/ld+json"}
+        try:
+            response = requests.put(
+                FUSEKI_PATH,
+                params={"graph": graph_uri},
+                data=graph_jsonld,
+                headers=headers
+            )
+            response.raise_for_status()
+            print(f"Successfully saved graph {graph_uri} to Fuseki. Status: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to save graph {graph_uri} to Fuseki: {e}")

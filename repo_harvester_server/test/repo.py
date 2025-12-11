@@ -1,11 +1,14 @@
-from repo_harvester_server.helper.RepositoryHarvester import CatalogMetadataHarvester
+import json
+from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 
 
-repouri = 'https://doi.pangaea.de/10.1594/PANGAEA.986961'
-repouri = 'https://dummyrepository.org/'
+8#repouri = 'https://dummyrepository.org/'
 
-#repouri = 'https://www.pangaea.de/'
+repouri = 'https://www.pangaea.de/'
 
-harvester = CatalogMetadataHarvester(repouri)
+harvester = RepositoryHarvester(repouri)
 
-harvester.harvest()
+final_records = harvester.harvest()
+
+print("\n--- FINAL EXPORTED RECORDS ---")
+print(json.dumps(final_records, indent=4))
