@@ -9,7 +9,7 @@ DCAT_EXPORT_QUERY = '''
     "schema" : 'http://schema.org/',
     "vcard": 'http://www.w3.org/2006/vcard/ns#',
     "foaf": 'http://xmlns.com/foaf/0.1/',
-    "prov": 'http://www.w3.org/ns/prov#>'
+    "prov": 'http://www.w3.org/ns/prov#'
   },
    "@type": 'dcat:CatalogRecord',
    "prov:wasGeneratedBy":{

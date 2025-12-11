@@ -54,7 +54,7 @@ curl "http://localhost:8080/?url=https://pangaea.de"
 ### 3. Real World Usage (Batch Harvesting)
 
 * To harvest a list of repositories, you can loop through them sending requests to your local server.
-* See placeholder example in `harvest_barch.sh`
+* See example in `harvest_batch.sh`
 
 ## 🧠 Data Model & Schema
 
