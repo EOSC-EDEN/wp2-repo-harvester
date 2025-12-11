@@ -7,7 +7,7 @@ class Re3DataHarvester:
     A harvester for fetching metadata from the re3data.org registry.
     """
     def __init__(self):
-        self.api_url = "https://www.re3data.org/api/v1" # Use v1 for detailed records
+        self.api_url = "https://www.re3data.org/api/beta" # Use beta, otherwise query wont work.. v1 for detailed records
         self.ns = {"r3d": "http://www.re3data.org/schema/2-2"}
 
     def harvest(self, catalog_url):
@@ -25,13 +25,14 @@ class Re3DataHarvester:
             search_url = f"{self.api_url}/repositories?query={hostname}"
             resp = requests.get(search_url, timeout=15)
             resp.raise_for_status()
-
+            print('#### 1', search_url)
             root = etree.fromstring(resp.content)
             
             # Iterate through all repository IDs found in the search result
             for repo_id_element in root.findall('.//id'):
                 repo_id = repo_id_element.text
-                
+                print('#### 2', repo_id)
+
                 # Fetch the full, detailed record for this specific repository
                 repo_url = f"{self.api_url}/repository/{repo_id}"
                 repo_resp = requests.get(repo_url, timeout=15)
@@ -73,10 +74,17 @@ class Re3DataHarvester:
         metadata = {
             'title': find_text(".//r3d:repositoryName"),
             'description': find_text(".//r3d:description"),
-            're3dataID': find_text(".//r3d:re3data.orgIdentifier"),
-            'landingPage': find_text(".//r3d:repositoryURL"),
-            'publisher': publishers if publishers else None
+            'identifier': [],
+            'publisher': {'name': publishers if publishers else None},
+            'contact': find_text(".//r3d:repositoryContact"),
         }
-        
+        metadata['identifier'].append(find_text(".//r3d:re3data.orgIdentifier"))
+        metadata['identifier'].append(find_text(".//r3d:repositoryURL"))
+        metadata['identifier'].append(find_text(".//r3d:repositoryIdentifier"))#e.g. fairsharing id
+
+        #services
+        #<r3d:api
+        #<r3d:syndication
+
         # Return only non-empty values
         return {k: v for k, v in metadata.items() if v}

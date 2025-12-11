@@ -23,6 +23,7 @@ DCAT_EXPORT_QUERY = '''
    "prov:hadPrimarySource": {
   "@type": ['dcat:Catalog', 'foaf:Project'],
   "dct:title": title,
+  "dct:identifier": identifier,
   "dct:publisher": publisher[].{
     "@type": 'foaf:Agent',
     "foaf:name" : name,
@@ -45,6 +46,7 @@ DCAT_EXPORT_QUERY = '''
 
 REPO_INFO_QUERY = '''{
 title: name || headline[*]."@value" || headline || title || null,
+identifier: ["@id" , identifier][] ,
 resource_type: "@type",
 publisher: [(publisher || provider)] | [].{name: (name || @), country: ("country-name" || address.addressCountry || null)} ,
 description: description || abstract || null,
