@@ -9,7 +9,7 @@ class Re3DataHarvester:
     A harvester for fetching metadata from the re3data.org registry.
     """
     def __init__(self):
-        self.api_url = "https://www.re3data.org/api/beta" # Use beta version
+        self.api_url = "https://www.re3data.org/api/beta"
         self.ns = {"r3d": "http://www.re3data.org/schema/2-2"}
         self.service_mappings = self._load_service_mappings()
 
@@ -72,19 +72,24 @@ class Re3DataHarvester:
         """
         Parses the detailed XML for a specific repository from re3data.
         """
+        # General purpose helper for single-value text fields
         def find_text(element, path):
             node = element.find(path, self.ns)
             return node.text.strip() if node is not None and node.text else None
 
-        # Correctly extract all institutions
+        # General purpose helper for multi-value text fields
+        def find_all_text(element, path):
+            return [node.text.strip() for node in element.findall(path, self.ns) if node.text]
+
+        # --- Publisher / Institution Extraction (Handles Multiple) ---
         publishers = []
         for inst_element in repo_root.findall(".//r3d:institution", self.ns):
             inst_name = find_text(inst_element, 'r3d:institutionName')
             if inst_name:
                 publishers.append({"type": "org:Organization", "name": inst_name})
 
+        # --- Service Extraction (Handles Multiple) ---
         services = []
-        # Extract API services
         for api_elem in repo_root.findall(".//r3d:api", self.ns):
             api_type = api_elem.get('apiType')
             api_url = api_elem.text.strip() if api_elem.text else None
@@ -95,8 +100,6 @@ class Re3DataHarvester:
                     'conforms_to': self.service_mappings.get(api_type),
                     'title': f"{api_type} API" if api_type else "API Service"
                 })
-
-        # Extract Syndication services
         for syndication_elem in repo_root.findall(".//r3d:syndication", self.ns):
             syndication_type = syndication_elem.get('syndicationType')
             syndication_url = syndication_elem.text.strip() if syndication_elem.text else None
@@ -108,21 +111,21 @@ class Re3DataHarvester:
                     'title': f"{syndication_type} Feed" if syndication_type else "Syndication Feed"
                 })
         
-        identifiers = []
-        repo_id = find_text(repo_root, ".//r3d:re3data.orgIdentifier")
-        if repo_id: identifiers.append(repo_id)
-        repo_url = find_text(repo_root, ".//r3d:repositoryURL")
-        if repo_url: identifiers.append(repo_url)
-        for other_id in repo_root.findall(".//r3d:repositoryIdentifier", self.ns):
-            if other_id.text: identifiers.append(other_id.text.strip())
+        # --- Identifier Extraction (Handles Multiple) ---
+        identifiers = [
+            find_text(repo_root, ".//r3d:re3data.orgIdentifier"),
+            find_text(repo_root, ".//r3d:repositoryURL")
+        ] + find_all_text(repo_root, ".//r3d:repositoryIdentifier")
 
         metadata = {
             'title': find_text(repo_root, ".//r3d:repositoryName"),
             'description': find_text(repo_root, ".//r3d:description"),
-            'identifier': identifiers,
+            'identifier': [i for i in identifiers if i], # Clean out any None values
             'publisher': publishers if publishers else None,
-            'contact': find_text(repo_root, ".//r3d:repositoryContact"),
-            'services': services if services else None
+            'contact': find_all_text(repo_root, ".//r3d:repositoryContact"), # Now captures all contacts
+            'services': services if services else None,
+            'keywords': find_all_text(repo_root, ".//r3d:keyword"), # Now captures all keywords
+            'subjects': find_all_text(repo_root, ".//r3d:subject") # Now captures all subjects
         }
 
         return {k: v for k, v in metadata.items() if v}
