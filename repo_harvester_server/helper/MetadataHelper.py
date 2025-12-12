@@ -150,7 +150,6 @@ class MetadataHelper:
         return process_list
 
     def _extract_services(self, g, catalog_node):
-        service_dict = {}
         services_list = []
         service_nodes = list(g.objects(catalog_node, DCAT.service)) + \
                         self._fuzzy_objects(g, catalog_node, 'service')
@@ -189,15 +188,11 @@ class MetadataHelper:
             title = g.value(svc, DCTERMS.title) or self._fuzzy_value(g, svc, 'name')
             if title: svc_dict['title'] = str(title)
 
-            # merge schema.org and DCAT service specification according to FAIR-IMPACT 5.4 prototype
-            # dict should have same structure as fairicat dict
             svc_dict['conforms_to'] = svc_dict.get('conformsTo') or  svc_dict.get('documentation') or svc_dict.get('description') or None
             svc_dict['endpoint_uri'] = svc_dict.get('endpointURL')
-            service_dict[svc_dict['endpointURL']] = svc_dict
-
+            
             services_list.append(svc_dict)
-        return service_dict
-        #return services_list
+        return services_list
 
     def get_jsonld_metadata(self, jstr):
         metadata = {}
@@ -292,71 +287,64 @@ class MetadataHelper:
 
     def get_sitemap_service_metadata(self):
         metadata = {}
-        sitemap_service = {}
-        # cpp:024 Enabling Discovery
+        sitemap_services = []
         if self.catalog_url:
-            #option 1: in robots.txt
             try:
                 r = requests.get(str(self.catalog_url).rstrip('/')+'/robots.txt')
                 if r.status_code == 200:
                     m = re.search(r'^Sitemap:\s*(\S+)', r.text, re.MULTILINE)
                     if m:
-                        sitemap_service =  {
-                            m.group(1):{
+                        sitemap_services.append({
                             'endpoint_uri': m.group(1),
-                            'conforms_to': 'https://www.sitemaps.org/protocol.html',  # only here because mime is id for feed type
+                            'conforms_to': 'https://www.sitemaps.org/protocol.html',
                             'output_format': 'application/xml'
-                            }
-                        }
+                        })
             except Exception as e:
                 print('FAILED TO GET SITEMAP SERVICE METADATA: ', e)
-            if sitemap_service:
-                metadata['services'] = sitemap_service
-                #print('SITEMAP LINKS: ', metadata)
+            if sitemap_services:
+                metadata['services'] = sitemap_services
         return metadata
 
     def get_feed_metadata(self):
         metadata = {}
-        services = {}
-        #cpp:024 Enabling Discovery
-        #cpp:009 Metadata Extraction
+        services = []
         feed_types = {'application/rss+xml':'https://www.rssboard.org/rss-specification',
                       'application/atom+xml': 'https://www.ietf.org/rfc/rfc4287.txt'}
         feed_links = self.signposting_helper.get_links(rel='alternate', type=list(feed_types.keys()))
         for api_link in feed_links:
-            # services
-            if api_link.get('anchor') not in services:
-                services[api_link.get('link')] = {
-                    'endpoint_uri' : api_link.get('link'),
-                    'conforms_to' : feed_types.get(api_link.get('type')),
-                    #'conforms_to' : api_link.get('type'),  # only here because mime is id for feed type
-                    'title' : api_link.get('title'),
-                    'output_format' :  api_link.get('type')
-                }
+            services.append({
+                'endpoint_uri' : api_link.get('link'),
+                'conforms_to' : feed_types.get(api_link.get('type')),
+                'title' : api_link.get('title'),
+                'output_format' :  api_link.get('type')
+            })
         if services:
             metadata['services'] = services
-            #print('FEED LINKS: ', metadata)
         return metadata
 
     def get_fairicat_metadata(self):
         metadata = {}
-        services = {}
-        self
+        services = []
         fairicat_api_links = self.signposting_helper.get_links(rel=['service-doc', 'service-meta'])
+        
+        # Use a dictionary to group by anchor
+        grouped_services = {}
         for api_link in fairicat_api_links:
-            # services
-            if api_link.get('anchor') not in services:
-                services[api_link.get('anchor')] = {'endpoint_uri': api_link.get('anchor')}
+            anchor = api_link.get('anchor')
+            if anchor not in grouped_services:
+                grouped_services[anchor] = {'endpoint_uri': anchor}
+            
             if api_link.get('rel') == 'service-doc':
-                services[api_link.get('anchor')]['conforms_to'] = api_link.get('link')
+                grouped_services[anchor]['conforms_to'] = api_link.get('link')
                 if api_link.get('title'):
-                    services[api_link.get('anchor')]['title'] = api_link.get('title')
+                    grouped_services[anchor]['title'] = api_link.get('title')
             if api_link.get('rel') == 'service-meta':
-                services[api_link.get('anchor')]['service_desc'] = api_link.get('link')
+                grouped_services[anchor]['service_desc'] = api_link.get('link')
                 if api_link.get('type'):
-                    services[api_link.get('anchor')]['output_format'] = api_link.get('type')
-        if services:
-            metadata['services'] = services
+                    grouped_services[anchor]['output_format'] = api_link.get('type')
+        
+        if grouped_services:
+            metadata['services'] = list(grouped_services.values())
         return metadata
 
     def get_jsonld_metadata_simple(self, jstr):
@@ -366,15 +354,14 @@ class MetadataHelper:
             sg = JSONGraph()
             sg.parse(jstr)
             metadata = sg.query(REPO_INFO_QUERY)
-            services ={}
+            services =[]
             for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
-                #print('SIMPLE SERVICES:  ', json.dumps(service_node, indent=4))
                 service_res = jmespath.search(SERVICE_INFO_QUERY, service_node)
                 if service_res.get('endpoint_uri'):
                     if service_res.get('type') == 'SearchAction':
                         service_res['output_format'] = 'text/html'
                         service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
-                    services[service_res.get('endpoint_uri')] = service_res
+                    services.append(service_res)
             if services:
                 metadata['services'] = services
         return metadata

@@ -1,8 +1,6 @@
 import json
 from datetime import datetime
-
 import requests
-from lxml import etree
 from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
@@ -150,8 +148,6 @@ class RepositoryHarvester:
             if not metadata_chunk:
                 continue
 
-            if  metadata_chunk.get('services'):
-                metadata_chunk['services'] =  list(metadata_chunk['services'].values())
             export_record = self.metadata_helper.export(metadata_chunk)
             primary_source = export_record.get('prov:hadPrimarySource')
             #this would ignore feed metadata etc which have no repo info per se
