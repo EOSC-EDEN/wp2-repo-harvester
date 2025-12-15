@@ -2,6 +2,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from lxml import etree
 
 import rdflib
 from jsonschema.exceptions import ValidationError
@@ -72,8 +73,23 @@ class MetadataHelper:
 
     def get_html_meta_tags_metadata(self):
         metadata = {}
+        helper_dir = os.path.dirname(os.path.abspath(__file__))
+        xslt_file_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'metatag2json.xslt'))
+
         if not isinstance(self.catalog_html, str) or not self.catalog_html: return metadata
         try:
+            html_parser = etree.HTMLParser()
+            html_doc = etree.fromstring(self.catalog_html, parser=html_parser)
+            with open(xslt_file_path, "rb") as f:
+                xslt_doc = etree.XML(f.read())
+            transform = etree.XSLT(xslt_doc)
+            # Apply transformation
+            result = transform(html_doc)
+            metadata = json.loads(str(result))
+        except Exception as e:
+            print('Error parsing meta tags metadata: {}'.format(e))
+
+        '''try:
             doc = lxml_html.fromstring(self.catalog_html)
             desc = doc.xpath('//meta[@name="description"]/@content')
             if desc: metadata['description'] = desc[0].strip()
@@ -81,7 +97,7 @@ class MetadataHelper:
             if pub: metadata['publisher'] = pub[0].strip()
             tit = doc.xpath('//meta[@name="title"]/@content')
             if tit: metadata['title'] = tit[0].strip()
-        except Exception: pass
+        except Exception: pass'''
         return {k: v for k, v in metadata.items() if v}
 
     def _extract_publisher(self, g, resource_node):
@@ -91,7 +107,7 @@ class MetadataHelper:
                          self._fuzzy_value(g, resource_node, ['publisher', 'provider', 'creator', 'author'])
         
         # 2. Last Resort: Look for ANY linked Organization
-        if not publisher_node:
+        '''if not publisher_node:
             for s, p, o in g.triples((resource_node, None, None)):
                 # Check if object is an Organization
                 if (o, RDF.type, ORG.Organization) in g or \
@@ -99,7 +115,7 @@ class MetadataHelper:
                    (o, RDF.type, SDO_HTTP.Organization) in g or \
                    (o, RDF.type, FOAF.Organization) in g:
                     publisher_node = o
-                    break
+                    break'''
 
         if not publisher_node:
             return None
@@ -376,4 +392,18 @@ class MetadataHelper:
             print(e.message)
 
     def export(self, metadata):
-        return jmespath.search(data=metadata, expression = DCAT_EXPORT_QUERY)
+        def clean_none(obj):
+            if isinstance(obj, dict):
+                return {
+                    k: clean_none(v)
+                    for k, v in obj.items()
+                    if v is not None
+                }
+            elif isinstance(obj, list):
+                return [clean_none(item) for item in obj if item is not None]
+            else:
+                return obj
+
+        return clean_none(
+            jmespath.search(expression=DCAT_EXPORT_QUERY, data=metadata)
+        )

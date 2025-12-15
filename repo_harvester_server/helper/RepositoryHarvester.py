@@ -88,7 +88,7 @@ class RepositoryHarvester:
         """
         self.harvest_self_hosted_metadata()
         self.harvest_registry_metadata()
-        return self.export()
+        return self.export(True)
 
     def harvest_registry_metadata(self):
         """
@@ -148,6 +148,10 @@ class RepositoryHarvester:
             if not metadata_chunk:
                 continue
 
+            if  metadata_chunk.get('services'):
+                if is_instance(metadata_chunk['services'], dict):
+                    metadata_chunk['services'] =  list(metadata_chunk['services'].values())
+
             export_record = self.metadata_helper.export(metadata_chunk)
             primary_source = export_record.get('prov:hadPrimarySource')
             #this would ignore feed metadata etc which have no repo info per se
@@ -187,16 +191,19 @@ class RepositoryHarvester:
         """
         #TODO: HTTP Basic Auth
         #TODO: check if server is running etc..
-        headers = {
-            "Content-Type": "application/ld+json"
-        }
+        try:
+            headers = {
+                "Content-Type": "application/ld+json"
+            }
 
-        # Use graph store protocol
-        response = requests.put(
-            FUSEKI_PATH,
-            params={"graph": graph_uri},
-            data=graph_jsonld,
-            headers=headers
-        )
-        print("Status:", response.status_code)
-        print(response.text)
+            # Use graph store protocol
+            response = requests.put(
+                FUSEKI_PATH,
+                params={"graph": graph_uri},
+                data=graph_jsonld,
+                headers=headers
+            )
+            print("Status:", response.status_code)
+            print(response.text)
+        except Exception as e:
+            print(f"An error occurred while saving graph: {e}")
