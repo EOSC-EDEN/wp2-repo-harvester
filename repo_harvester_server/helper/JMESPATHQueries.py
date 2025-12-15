@@ -33,6 +33,7 @@ DCAT_EXPORT_QUERY = '''
   "dct:language": language,
   "dct:contactPoint": contact,
   "dct:license": license || null,
+  "dcat:keyword": [subject, keywords, theme][],
   "dcat:service": services[].{
       "@id": endpoint_uri,
       "@type": 'dcat:DataService',
@@ -53,6 +54,7 @@ description: description || abstract || null,
 language: inLanguage || language || null,
 access_terms: accessRights || conditionsOfAccess || ((isAccessibleForFree || free) == `true` && 'unrestricted' || (isAccessibleForFree || free) == `false` && 'restricted' || null),
 contact: contactPoint || null,
+subject: [subjects, keyword, theme][],
 license: license."@id" || license.id || license.name || license || null 
 }
 '''

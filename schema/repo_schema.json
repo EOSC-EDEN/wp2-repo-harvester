@@ -12,6 +12,7 @@
     "country": {},
     "contact": {},
     "license": {},
+    "keyword": {},
 
     "services": {
       "type": "object",
