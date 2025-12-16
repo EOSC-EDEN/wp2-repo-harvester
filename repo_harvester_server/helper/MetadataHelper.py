@@ -86,7 +86,9 @@ class MetadataHelper:
             # Apply transformation
             result = transform(html_doc)
             metadata = json.loads(str(result))
+            logging.log(logging.ERROR, 'TEST ERROR')
         except Exception as e:
+            logging.log(logging.ERROR, e)
             print('Error parsing meta tags metadata: {}'.format(e))
 
         '''try:
@@ -370,7 +372,7 @@ class MetadataHelper:
             sg = JSONGraph()
             sg.parse(jstr)
             metadata = sg.query(REPO_INFO_QUERY)
-            services =[]
+            services = []
             for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
                 service_res = jmespath.search(SERVICE_INFO_QUERY, service_node)
                 if service_res.get('endpoint_uri'):
@@ -380,6 +382,7 @@ class MetadataHelper:
                     services.append(service_res)
             if services:
                 metadata['services'] = services
+        print(metadata)
         return metadata
 
     def validate(self,  data, schema = None):

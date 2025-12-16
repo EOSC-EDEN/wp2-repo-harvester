@@ -41,6 +41,10 @@ DCAT_EXPORT_QUERY = '''
       "dct:conformsTo": conforms_to,
       "dct:title": title,
       "dct:format": output_format
+  },
+  "dct:conformsTo": policy[].{
+  "@id": uri,
+  "@type": 'dcat:Policy'
   }
 }}
 '''
@@ -55,7 +59,8 @@ language: inLanguage || language || null,
 access_terms: accessRights || conditionsOfAccess || ((isAccessibleForFree || free) == `true` && 'unrestricted' || (isAccessibleForFree || free) == `false` && 'restricted' || null),
 contact: contactPoint || null,
 subject: [subjects, keyword, theme][],
-license: license."@id" || license.id || license.name || license || null 
+license: license."@id" || license.id || license.name || license || null ,
+policy: (conformsTo||publicationPrinciples)[?"@type" != 'Standard'].{type: ["@type", additionalType][], uri: "@id"||url}
 }
 '''
 # a jmespath query to retrieve service info

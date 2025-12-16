@@ -1,6 +1,12 @@
 import json
 from datetime import datetime
 import requests
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+
 from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
@@ -9,7 +15,7 @@ from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvest
 from repo_harvester_server.config import FUSEKI_PATH
 
 class RepositoryHarvester:
-
+    logger = logging.getLogger('RepositoryHarvester')
     """
     The main orchestrator for the harvesting process.
     It coordinates the self-hosted harvesting and the registry harvesting.
@@ -34,10 +40,9 @@ class RepositoryHarvester:
         self.metadata_helper = None
 
         if not str(self.catalog_url).startswith('http'):
-            print('Invalid repo URI:', self.catalog_url)
-            return
+            self.logger.error("Invalid repo URI: %s", self.catalog_url)
 
-            # Use a polite User-Agent for research harvesting
+        # Use a polite User-Agent for research harvesting
         headers = {
             'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
@@ -49,9 +54,9 @@ class RepositoryHarvester:
             self.catalog_html = response.text
             self.catalog_header = response.headers
             self.metadata_helper = MetadataHelper(self.catalog_url, self.catalog_html, self.catalog_header)
+            self.logger.error('Catalog URL:'+ self.catalog_url)
         except requests.exceptions.RequestException as e:
-            print(f"Failed to fetch {self.catalog_url}: {e}")
-
+            self.logger.error("Failed to fetch URI: %s", self.catalog_url)
 
     def merge_metadata(self, new_metadata, source = None):
         """
@@ -94,7 +99,7 @@ class RepositoryHarvester:
         """
         Orchestrates harvesting from all configured external registries.
         """
-        print("--- Starting Registry Harvesting ---")
+        self.logger.info("--- Starting Registry Harvesting ---")
 
         re3data_harvester = Re3DataHarvester()
         re3data_meta = re3data_harvester.harvest(self.catalog_url)
@@ -106,7 +111,7 @@ class RepositoryHarvester:
         print(f"RAW FAIRsharing METADATA: {json.dumps(fairsharing_meta, indent=4)}")
         self.merge_metadata(fairsharing_meta, 'fairsharing')
 
-        print("--- Finished Registry Harvesting ---")
+        self.logger.info("--- Finished Registry Harvesting ---")
 
     def harvest_self_hosted_metadata(self):
         """
@@ -149,7 +154,7 @@ class RepositoryHarvester:
                 continue
 
             if  metadata_chunk.get('services'):
-                if is_instance(metadata_chunk['services'], dict):
+                if isinstance(metadata_chunk['services'], dict):
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
 
             export_record = self.metadata_helper.export(metadata_chunk)
