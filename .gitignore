@@ -25,3 +25,6 @@ test_parser_logic.py
 # OS generated
 .DS_Store
 Thumbs.db
+
+# Local credentials
+repo_harvester_server/helper/fairsharing_credentials.json
