@@ -127,7 +127,7 @@ class Re3DataHarvester:
             'contact': find_all_text(repo_root, ".//r3d:repositoryContact"),
             'services': services if services else None,
             'keywords': find_all_text(repo_root, ".//r3d:keyword"),
-            'subjects': find_all_text(repo_root, ".//r3d:subject")
+            'subject': find_all_text(repo_root, ".//r3d:subject")
         }
 
         return {k: v for k, v in metadata.items() if v}
