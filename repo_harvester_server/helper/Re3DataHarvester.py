@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 from lxml import etree
 import os
 import csv
+from .Validator import EndpointValidator
 
 class Re3DataHarvester:
     """
@@ -12,6 +13,7 @@ class Re3DataHarvester:
         self.api_url = "https://www.re3data.org/api/beta"
         self.ns = {"r3d": "http://www.re3data.org/schema/2-2"}
         self.service_mappings = self._load_service_mappings()
+        self.validator = EndpointValidator()
 
     def _load_service_mappings(self):
         """Loads the service mappings from the CSV file."""
@@ -72,46 +74,46 @@ class Re3DataHarvester:
         """
         Parses the detailed XML for a specific repository from re3data.
         """
-        # General purpose helper for single-value text fields
         def find_text(element, path):
             node = element.find(path, self.ns)
             return node.text.strip() if node is not None and node.text else None
 
-        # General purpose helper for multi-value text fields
         def find_all_text(element, path):
             return [node.text.strip() for node in element.findall(path, self.ns) if node.text]
 
-        # --- Publisher / Institution Extraction (Handles Multiple) ---
         publishers = []
         for inst_element in repo_root.findall(".//r3d:institution", self.ns):
             inst_name = find_text(inst_element, 'r3d:institutionName')
             if inst_name:
                 publishers.append({"type": "org:Organization", "name": inst_name})
 
-        # --- Service Extraction (Handles Multiple) ---
         services = []
         for api_elem in repo_root.findall(".//r3d:api", self.ns):
             api_type = api_elem.get('apiType')
             api_url = api_elem.text.strip() if api_elem.text else None
             if api_url:
+                validation_result = self.validator.validate_url(api_url, api_type)
                 services.append({
                     'endpoint_uri': api_url,
                     'type': f"re3data:API:{api_type}" if api_type else "re3data:API",
                     'conforms_to': self.service_mappings.get(api_type),
-                    'title': f"{api_type} API" if api_type else "API Service"
+                    'title': f"{api_type} API" if api_type else "API Service",
+                    'validation_status': validation_result
                 })
+
         for syndication_elem in repo_root.findall(".//r3d:syndication", self.ns):
             syndication_type = syndication_elem.get('syndicationType')
             syndication_url = syndication_elem.text.strip() if syndication_elem.text else None
             if syndication_url:
+                validation_result = self.validator.validate_url(syndication_url, syndication_type)
                 services.append({
                     'endpoint_uri': syndication_url,
                     'type': f"re3data:Syndication:{syndication_type}" if syndication_type else "re3data:Syndication",
                     'conforms_to': self.service_mappings.get(syndication_type),
-                    'title': f"{syndication_type} Feed" if syndication_type else "Syndication Feed"
+                    'title': f"{syndication_type} Feed" if syndication_type else "Syndication Feed",
+                    'validation_status': validation_result
                 })
         
-        # --- Identifier Extraction (Handles Multiple) ---
         identifiers = [
             find_text(repo_root, ".//r3d:re3data.orgIdentifier"),
             find_text(repo_root, ".//r3d:repositoryURL")
@@ -120,12 +122,12 @@ class Re3DataHarvester:
         metadata = {
             'title': find_text(repo_root, ".//r3d:repositoryName"),
             'description': find_text(repo_root, ".//r3d:description"),
-            'identifier': [i for i in identifiers if i], # Clean out any None values
+            'identifier': [i for i in identifiers if i],
             'publisher': publishers if publishers else None,
-            'contact': find_all_text(repo_root, ".//r3d:repositoryContact"), # Now captures all contacts
+            'contact': find_all_text(repo_root, ".//r3d:repositoryContact"),
             'services': services if services else None,
-            'keywords': find_all_text(repo_root, ".//r3d:keyword"), # Now captures all keywords
-            'subject': find_all_text(repo_root, ".//r3d:subject") # Now captures all subjects
+            'keywords': find_all_text(repo_root, ".//r3d:keyword"),
+            'subjects': find_all_text(repo_root, ".//r3d:subject")
         }
 
         return {k: v for k, v in metadata.items() if v}
