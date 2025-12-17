@@ -1,5 +1,9 @@
 import json
 import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 import re
 from pathlib import Path
 from lxml import etree
@@ -11,7 +15,7 @@ from lxml import html as lxml_html
 import os
 from repo_harvester_server.helper.GraphHelper import JSONGraph
 from repo_harvester_server.helper.SignPostingHelper import SignPostingHelper
-from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, REPO_INFO_QUERY, DCAT_EXPORT_QUERY
+from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, POLICY_INFO_QUERY, REPO_INFO_QUERY, DCAT_EXPORT_QUERY
 from jsonschema import validate
 import jmespath
 import requests
@@ -31,6 +35,7 @@ DCAT_IN_CATALOG = URIRef("http://www.w3.org/ns/dcat#inCatalog")
 logging.getLogger('rdflib.term').setLevel(logging.ERROR)
 
 class MetadataHelper:
+    logger = logging.getLogger('MetadataHarvester')
     def __init__(self, catalog_url, catalog_html=None, catalog_header=None):
         # Get the directory where the current script is located
         helper_dir = os.path.dirname(os.path.abspath(__file__))
@@ -86,11 +91,8 @@ class MetadataHelper:
             # Apply transformation
             result = transform(html_doc)
             metadata = json.loads(str(result))
-            logging.log(logging.ERROR, 'TEST ERROR')
         except Exception as e:
-            logging.log(logging.ERROR, e)
-            print('Error parsing meta tags metadata: {}'.format(e))
-
+            self.logger.error("Error parsing meta tags metadata: %s", e)
         '''try:
             doc = lxml_html.fromstring(self.catalog_html)
             desc = doc.xpath('//meta[@name="description"]/@content')
@@ -263,7 +265,8 @@ class MetadataHelper:
                 services = self._extract_services(g, catalog_node)
                 if services: metadata['services'] = services
         except Exception as e:
-            print(f"Error processing JSON-LD: {e}")
+            self.logger.error("Error processing JSON-LD: " + str(e))
+            #print(f"Error processing JSON-LD: {e}")
         return metadata
 
     def get_embedded_jsonld_metadata(self,  mode = 'rdflib'):
@@ -283,7 +286,8 @@ class MetadataHelper:
                     metadata.update(extracted)
                 except json.JSONDecodeError: continue
         except Exception as e:
-            print(f"Loading embedded JSON-LD Error: {e}")
+            self.logger.error("Loading embedded JSON-LD Error:"+str(e))
+            #print(f"Loading embedded JSON-LD Error: {e}")
         return metadata
     
     def get_linked_jsonld_metadata(self, typed_link, mode = 'rdflib'):
@@ -299,8 +303,12 @@ class MetadataHelper:
                             metadata = self.get_jsonld_metadata(ljson_str)
                         else:
                             metadata = self.get_jsonld_metadata_simple(ljson_str)
-                    except json.JSONDecodeError: pass
-            except Exception: pass
+                    except json.JSONDecodeError as je:
+                        self.logger.error("JSON decode Error: " + str(je))
+                        pass
+            except Exception as e:
+                self.logger.error("Remote JSON loading Error: " + str(e))
+                pass
         return metadata
 
     def get_sitemap_service_metadata(self):
@@ -318,7 +326,8 @@ class MetadataHelper:
                             'output_format': 'application/xml'
                         })
             except Exception as e:
-                print('FAILED TO GET SITEMAP SERVICE METADATA: ', e)
+                self.logger.error("Sitemap metadata parsing Error: " + str(e))
+                #print('FAILED TO GET SITEMAP SERVICE METADATA: ', e)
             if sitemap_services:
                 metadata['services'] = sitemap_services
         return metadata
@@ -373,8 +382,9 @@ class MetadataHelper:
             sg.parse(jstr)
             metadata = sg.query(REPO_INFO_QUERY)
             services = []
+            policies = []
             for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
-                service_res = jmespath.search(SERVICE_INFO_QUERY, service_node)
+                service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
                 if service_res.get('endpoint_uri'):
                     if service_res.get('type') == 'SearchAction':
                         service_res['output_format'] = 'text/html'
@@ -382,7 +392,17 @@ class MetadataHelper:
                     services.append(service_res)
             if services:
                 metadata['services'] = services
-        print(metadata)
+
+            for policy_node in sg.getNodesByType(['CreativeWork', 'Policy' ,'PreservationPolicy']):
+                source_prop = policy_node.get('from_prop')
+                policy_res = jmespath.search(POLICY_INFO_QUERY, policy_node.get('graph'))
+                if source_prop !='conformsTo':
+                    policy_res['type'].append(source_prop)
+                policies.append(policy_res)
+
+            if policies:
+                metadata['policies'] = policies
+
         return metadata
 
     def validate(self,  data, schema = None):

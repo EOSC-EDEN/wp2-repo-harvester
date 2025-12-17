@@ -1,5 +1,5 @@
 import connexion
-from repo_harvester_server.helper.RepositoryHarvester import CatalogMetadataHarvester
+from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 from repo_harvester_server.models.repository_info import RepositoryInfo
 
 def get_repo_info(url):  # noqa: E501
@@ -16,7 +16,7 @@ def get_repo_info(url):  # noqa: E501
     
     try:
         # 1. Instantiate the harvester for the requested URL
-        harvester = CatalogMetadataHarvester(url)
+        harvester = RepositoryHarvester(url)
         
         # 2. Run the harvest process
         harvester.harvest()

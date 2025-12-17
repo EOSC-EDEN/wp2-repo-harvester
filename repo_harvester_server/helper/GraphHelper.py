@@ -38,7 +38,7 @@ class JSONGraph:
                 self.jsonld = self.expandNode(root)
             #print('REBUILT JSON: ', json.dumps(self.jsonld, indent=2))
 
-    def _setNodes(self, branch):
+    def _setNodes(self, branch, fromprop = None):
         def strip_node_prefixes(node):
             """Recursively strip all prefixes from dict keys and @type values."""
             if isinstance(node, dict):
@@ -82,7 +82,8 @@ class JSONGraph:
                 'id': branch_id,
                 'outlinks': 0,
                 'inlinks': 0,
-                'properties': noprops
+                'properties': noprops,
+                'from_prop': fromprop
             }
             # Iterate safely over a snapshot of keys
             for nodeprop in list(branch.keys()):
@@ -94,7 +95,7 @@ class JSONGraph:
                             if len(ncand) == 1 and '@id' in ncand:
                                 nodecand[nidx] = ncand['@id']
                             else:
-                                self._setNodes(ncand)
+                                self._setNodes(ncand,nodeprop)
                 # DICT
                 elif isinstance(nodecand, dict):
                     if len(nodecand) == 1 and '@id' in nodecand:
@@ -103,7 +104,7 @@ class JSONGraph:
                         node_id = nodecand.get('@id', 'urn:uuid:' + str(uuid.uuid4()))
                         nodecand['@id'] = node_id
                         branch[nodeprop] = node_id
-                        self._setNodes(nodecand)
+                        self._setNodes(nodecand,nodeprop)
 
     def _setNodesInfo(self):
         main_entity_score = 0
@@ -204,46 +205,6 @@ class JSONGraph:
 
         return expanded
 
-    '''def rebuildGraph(self, node, visited=None):
-        """
-        Recursively rebuild the JSON-LD graph, replacing all @id references
-        with full node dictionaries from self.nodes.
-        Handles nested dicts and lists.
-        """
-        if visited is None:
-            visited = set()
-
-        if not isinstance(node, dict):
-            return node
-
-        node_id = node.get('@id')
-        if node_id is not None:
-            if node_id in visited:
-                return node  # Prevent cycles
-            visited.add(node_id)
-
-        for key, value in node.items():
-            # Case 1: value is a string -> possible @id reference
-            if isinstance(value, str):
-                if value in self.nodes and value != node_id:
-                    node[key] = copy.deepcopy(self.nodes[value]['dict'])
-                    self.rebuildGraph(node[key], visited)
-
-            # Case 2: value is a list -> process each element
-            elif isinstance(value, list):
-                for idx, item in enumerate(value):
-                    if isinstance(item, str):
-                        if item in self.nodes and item != node_id:
-                            value[idx] = copy.deepcopy(self.nodes[item]['dict'])
-                            self.rebuildGraph(value[idx], visited)
-                    elif isinstance(item, dict):
-                        self.rebuildGraph(item, visited)
-
-            # Case 3: value is a dict -> recurse
-            elif isinstance(value, dict):
-                self.rebuildGraph(value, visited)
-
-        return node'''
 
     def getNodesByType(self, target_type, excludeMainEntity = True):
         # Normalize input: always work with a list of types
@@ -268,9 +229,9 @@ class JSONGraph:
             if node_types & target_types:
                 if excludeMainEntity:
                     if self.mainNode != node['dict']['@id']:
-                        results.append(self.expandNode(node['dict']['@id']))
+                        results.append({'graph': self.expandNode(node['dict']['@id']), 'from_prop': node['from_prop']})
                 else:
-                    results.append(self.expandNode(node['dict']['@id']))
+                    results.append({'graph': self.expandNode(node['dict']['@id']), 'from_prop': node['from_prop']})
         return results
 
     def query(self, query):

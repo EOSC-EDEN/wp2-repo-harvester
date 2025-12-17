@@ -54,7 +54,7 @@ class RepositoryHarvester:
             self.catalog_html = response.text
             self.catalog_header = response.headers
             self.metadata_helper = MetadataHelper(self.catalog_url, self.catalog_html, self.catalog_header)
-            self.logger.error('Catalog URL:'+ self.catalog_url)
+            self.logger.info('Catalog URL harvested: '+ self.catalog_url)
         except requests.exceptions.RequestException as e:
             self.logger.error("Failed to fetch URI: %s", self.catalog_url)
 
@@ -118,10 +118,10 @@ class RepositoryHarvester:
         Harvests metadata directly from the repository landing page.
         """
         if not self.catalog_html or not self.metadata_helper:
-            print('Cannot perform self-hosted harvest; initial fetch failed.')
+            self.logger.warning('Cannot perform self-hosted harvest; initial fetch failed.')
             return
         
-        print("--- Starting Self-Hosted Harvesting ---")
+        self.logger.info("--- Starting Self-Hosted Harvesting ---")
         mode = 'simple'
         try:
             self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(mode), 'embedded_jsonld')
@@ -131,9 +131,9 @@ class RepositoryHarvester:
             self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
             self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
             self.merge_metadata(self.metadata_helper.get_sitemap_service_metadata(), 'sitemap_service')
-            print("--- Finished Self-Hosted Harvesting ---")
+            self.logger.info("--- Finished Self-Hosted Harvesting ---")
         except Exception as e:
-            print(f"An error occurred during self-hosted harvest: {e}")
+            self.logger.error(f"An error occurred during self-hosted harvest: {e}")
 
     def export(self, save=False):
         """
@@ -141,7 +141,7 @@ class RepositoryHarvester:
         It uses the MetadataHelper export method which is based on JMESPATH see: JMESPATHQueries.py
         Some additional metadata is added here to the resulting dict
         """
-        print("--- Starting Export ---")
+        self.logger.info("--- Starting Export ---")
         final_records = []
         if not self.metadata:
             print("No metadata was harvested, nothing to export.")
@@ -177,14 +177,14 @@ class RepositoryHarvester:
                      export_record['prov:hadPrimarySource']['@id'] = self.catalog_url
 
                 final_records.append(export_record)
-                print(f"Successfully processed record from source: {source}")
-
+                self.logger.info(f"Successfully processed record from source: {source}")
                 if save:
                     self.save(graph_id, json.dumps(export_record))
             else:
-                print(f"Skipping export for source '{source}': No meaningful data to map.")
+                 self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
+                #print(f"Skipping export for source '{source}': No meaningful data to map.")
 
-        print("--- Finished Export ---")
+        self.logger.info("--- Finished Export ---")
         return final_records
 
     def save(self, graph_uri, graph_jsonld):
@@ -211,4 +211,4 @@ class RepositoryHarvester:
             print("Status:", response.status_code)
             print(response.text)
         except Exception as e:
-            print(f"An error occurred while saving graph: {e}")
+            self.logger.error(f"An error occurred while saving graph: {e}")
