@@ -21,7 +21,6 @@ class FAIRsharingHarvester:
         username = os.environ.get('FAIRSHARING_USERNAME')
         password = os.environ.get('FAIRSHARING_PASSWORD')
 
-        # Fallback to local credentials file if environment variables are not set
         if not username or not password:
             print("FAIRsharing credentials not in environment variables. Trying local file...")
             try:
@@ -68,11 +67,27 @@ class FAIRsharingHarvester:
         if not hostname:
             return None
 
-        domain_parts = hostname.split('.')
-        search_query = domain_parts[-2] if len(domain_parts) > 1 else domain_parts[0]
+        # Strategy 1: Search by hostname
+        metadata = self._search_fairsharing(hostname, catalog_url)
+        if metadata:
+            return metadata
 
+        # Strategy 2: Search by repository name (e.g., "borealis" from "borealisdata.ca")
+        repo_name = hostname.split('.')[0]
+        if repo_name != hostname:
+            print(f"Retrying FAIRsharing search with repository name: {repo_name}")
+            metadata = self._search_fairsharing(repo_name, catalog_url)
+            if metadata:
+                return metadata
+        
+        return None
+
+    def _search_fairsharing(self, query, catalog_url):
+        """
+        Helper to search FAIRsharing API and fetch details for the first match.
+        """
         search_url = f"{self.api_url}/search/fairsharing_records/"
-        payload = {"q": search_query}
+        payload = {"q": query}
         auth_headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
@@ -87,8 +102,7 @@ class FAIRsharingHarvester:
             response.raise_for_status()
             
             results = response.json().get('data', [])
-            # print(f"RAW FAIRsharing API results: {json.dumps(results, indent=4)}")
-            return self._parse_search_results(results, hostname)
+            return self._parse_search_results(results, urlparse(catalog_url).hostname)
 
         except requests.exceptions.RequestException as e:
             print(f"Error querying FAIRsharing search API: {e}")
@@ -98,41 +112,31 @@ class FAIRsharingHarvester:
         """
         Parses the FAIRsharing JSON search results to find the best match.
         """
-        print(f"FAIRsharing API returned {len(results)} results.")
         matching_records = []
         normalized_hostname = hostname.lower().replace('www.', '', 1)
         
-        for i, record in enumerate(results):
-            print(f"--- Processing record {i} ---")
-            
+        for record in results:
             if record.get('type') != 'fairsharing_records':
-                pass
+                continue
 
             attributes = record.get('attributes', {})
             metadata_nested = attributes.get('metadata', {})
             
             homepage = metadata_nested.get('homepage')
-            print(f"  - Name: {metadata_nested.get('name')}")
-            print(f"  - Homepage: {homepage}")
             
             if not homepage:
-                print("  - Skipping: No homepage found.")
                 continue
 
             try:
                 record_hostname = urlparse(homepage).hostname
                 if record_hostname:
                     normalized_record_hostname = record_hostname.lower().replace('www.', '', 1)
-                    print(f"    Comparing '{normalized_record_hostname}' with '{normalized_hostname}'")
                     if normalized_record_hostname == normalized_hostname:
-                        print(f"    -> Found a match!")
                         matching_records.append(record)
-            except Exception as e:
-                print(f"Error parsing URL: {e}")
+            except Exception:
                 continue
         
         if not matching_records:
-            print("No matching records found after filtering.")
             return None
 
         best_record = None
@@ -147,7 +151,6 @@ class FAIRsharingHarvester:
                     break
         
         if not best_record:
-            print(f"Found {len(matching_records)} match(es) on FAIRsharing for {hostname}, but none were active.")
             return None
 
         attributes = best_record.get('attributes', {})
