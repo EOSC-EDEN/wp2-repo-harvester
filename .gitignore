@@ -26,5 +26,8 @@ test_parser_logic.py
 .DS_Store
 Thumbs.db
 
-# Local credentials
+# Local credentials (fairsharing)
 repo_harvester_server/helper/fairsharing_credentials.json
+
+# Local credentials (mscr)
+repo_harvester_server/mscr/mscr_credentials.json
