@@ -30,6 +30,7 @@ class FAIRsharingHarvester:
 
         # Fallback to local credentials file if environment variables are not set
         if not username or not password:
+            print("FAIRsharing credentials could not be loaded.")
             self.logger.info("FAIRsharing credentials not in environment variables. Trying local file...")
             try:
                 cred_path = os.path.join(os.path.dirname(__file__), 'fairsharing_credentials.json')
@@ -127,7 +128,7 @@ class FAIRsharingHarvester:
         for i, record in enumerate(results):
             self.logger.info(f"--- Processing record {i} ---")
             # print(f"Record keys: {record.keys()}")
-            
+
             if record.get('type') != 'fairsharing_records':
                 pass
 
@@ -154,6 +155,7 @@ class FAIRsharingHarvester:
 
         best_record = None
         for record in matching_records:
+            # Check status in nested metadata
             if record.get('attributes', {}).get('metadata', {}).get('status') == 'ready':
                 best_record = record
                 break
@@ -164,7 +166,6 @@ class FAIRsharingHarvester:
                     break
         
         if not best_record:
-            print(f"Found {len(matching_records)} match(es) on FAIRsharing for {hostname}, but none were active.")
             return None
 
         attributes = best_record.get('attributes', {})
