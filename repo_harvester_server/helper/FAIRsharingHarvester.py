@@ -30,7 +30,7 @@ class FAIRsharingHarvester:
 
         # Fallback to local credentials file if environment variables are not set
         if not username or not password:
-            print("FAIRsharing credentials not in environment variables. Trying local file...")
+            self.logger.info("FAIRsharing credentials not in environment variables. Trying local file...")
             try:
                 cred_path = os.path.join(os.path.dirname(__file__), 'fairsharing_credentials.json')
                 with open(cred_path, 'r') as f:
@@ -38,10 +38,10 @@ class FAIRsharingHarvester:
                     username = creds.get('FAIRSHARING_USERNAME')
                     password = creds.get('FAIRSHARING_PASSWORD')
             except FileNotFoundError:
-                print("Local credentials file 'fairsharing_credentials.json' not found.")
+                self.logger.warning("Local credentials file 'fairsharing_credentials.json' not found.")
                 return
             except (json.JSONDecodeError, KeyError):
-                print("Error reading local credentials file. Make sure it is valid JSON with the correct keys.")
+                self.logger.warning("Error reading local credentials file. Make sure it is valid JSON with the correct keys.")
                 return
 
         if not username or not password:
@@ -58,7 +58,7 @@ class FAIRsharingHarvester:
             data = response.json()
             self.jwt_token = data.get('jwt')
             if self.jwt_token:
-                print("Successfully authenticated with FAIRsharing.")
+                self.logger.info("Successfully authenticated with FAIRsharing.")
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to authenticate with FAIRsharing: {e}")
 
@@ -105,7 +105,7 @@ class FAIRsharingHarvester:
         """
         Parses the FAIRsharing JSON search results to find the best match.
         """
-        print(f"FAIRsharing API returned {len(results)} results.")
+        self.logger.info(f"FAIRsharing API returned {len(results)} results.")
         matching_records = []
         normalized_hostname = hostname.lower().replace('www.', '', 1)
         
