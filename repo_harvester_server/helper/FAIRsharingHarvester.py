@@ -28,6 +28,22 @@ class FAIRsharingHarvester:
         username = os.environ.get('FAIRSHARING_USERNAME')
         password = os.environ.get('FAIRSHARING_PASSWORD')
 
+        # Fallback to local credentials file if environment variables are not set
+        if not username or not password:
+            print("FAIRsharing credentials not in environment variables. Trying local file...")
+            try:
+                cred_path = os.path.join(os.path.dirname(__file__), 'fairsharing_credentials.json')
+                with open(cred_path, 'r') as f:
+                    creds = json.load(f)
+                    username = creds.get('FAIRSHARING_USERNAME')
+                    password = creds.get('FAIRSHARING_PASSWORD')
+            except FileNotFoundError:
+                print("Local credentials file 'fairsharing_credentials.json' not found.")
+                return
+            except (json.JSONDecodeError, KeyError):
+                print("Error reading local credentials file. Make sure it is valid JSON with the correct keys.")
+                return
+
         if not username or not password:
             self.logger.warning("FAIRsharing credentials (FAIRSHARING_USERNAME, FAIRSHARING_PASSWORD) not found in environment variables. Skipping authentication.")
             return
@@ -97,16 +113,11 @@ class FAIRsharingHarvester:
             self.logger.info(f"--- Processing record {i} ---")
             # print(f"Record keys: {record.keys()}")
             
-            if record.get('type') != 'fairsharing_records': # Changed from 'database' to 'fairsharing_records' based on raw output
-                # print(f"Skipping record type: {record.get('type')}")
-                # continue # Don't skip yet, let's see what's inside
+            if record.get('type') != 'fairsharing_records':
                 pass
 
             attributes = record.get('attributes', {})
-            # print(f"Attributes keys: {attributes.keys()}")
-            
             metadata_nested = attributes.get('metadata', {})
-            # print(f"Metadata keys: {metadata_nested.keys()}")
             
             homepage = metadata_nested.get('homepage')
             print(f"  - Name: {metadata_nested.get('name')}")
@@ -134,7 +145,6 @@ class FAIRsharingHarvester:
 
         best_record = None
         for record in matching_records:
-            # Check status in nested metadata
             if record.get('attributes', {}).get('metadata', {}).get('status') == 'ready':
                 best_record = record
                 break
