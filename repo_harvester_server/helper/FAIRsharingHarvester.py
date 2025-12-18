@@ -2,12 +2,19 @@ import os
 import json
 import requests
 from urllib.parse import urlparse
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 
 class FAIRsharingHarvester:
     """
     A harvester for fetching metadata from the FAIRsharing.org registry.
     Handles authentication and searching for repository records.
     """
+    logger = logging.getLogger('FAIRsharingHarvester')
+
     def __init__(self):
         self.api_url = "https://api.fairsharing.org"
         self.jwt_token = None
@@ -22,7 +29,7 @@ class FAIRsharingHarvester:
         password = os.environ.get('FAIRSHARING_PASSWORD')
 
         if not username or not password:
-            print("FAIRsharing credentials (FAIRSHARING_USERNAME, FAIRSHARING_PASSWORD) not found in environment variables. Skipping authentication.")
+            self.logger.warning("FAIRsharing credentials (FAIRSHARING_USERNAME, FAIRSHARING_PASSWORD) not found in environment variables. Skipping authentication.")
             return
 
         url = f"{self.api_url}/users/sign_in"
@@ -37,17 +44,17 @@ class FAIRsharingHarvester:
             if self.jwt_token:
                 print("Successfully authenticated with FAIRsharing.")
         except requests.exceptions.RequestException as e:
-            print(f"Failed to authenticate with FAIRsharing: {e}")
+            self.logger.error(f"Failed to authenticate with FAIRsharing: {e}")
 
     def harvest(self, catalog_url):
         """
         Public method to harvest metadata for a given URL.
         """
         if not self.jwt_token:
-            print("Skipping FAIRsharing harvesting due to authentication failure.")
+            self.logger.warning("Skipping FAIRsharing harvesting due to authentication failure.")
             return None
 
-        print("Harvesting from FAIRsharing...")
+        self.logger.info("Harvesting from FAIRsharing...")
         hostname = urlparse(catalog_url).hostname
         if not hostname:
             return None
@@ -66,7 +73,7 @@ class FAIRsharingHarvester:
         try:
             response = requests.post(search_url, headers=auth_headers, data=json.dumps(payload), timeout=15)
             if response.status_code == 401:
-                print("FAIRsharing search failed: 401 Unauthorized. Check permissions.")
+                self.logger.warning("FAIRsharing search failed: 401 Unauthorized. Check permissions.")
                 return None
             response.raise_for_status()
             
@@ -75,7 +82,7 @@ class FAIRsharingHarvester:
             return self._parse_search_results(results, hostname)
 
         except requests.exceptions.RequestException as e:
-            print(f"Error querying FAIRsharing search API: {e}")
+            self.logger.error(f"Error querying FAIRsharing search API: {e}")
         return None
 
     def _parse_search_results(self, results, hostname):
@@ -87,7 +94,7 @@ class FAIRsharingHarvester:
         normalized_hostname = hostname.lower().replace('www.', '', 1)
         
         for i, record in enumerate(results):
-            print(f"--- Processing record {i} ---")
+            self.logger.info(f"--- Processing record {i} ---")
             # print(f"Record keys: {record.keys()}")
             
             if record.get('type') != 'fairsharing_records': # Changed from 'database' to 'fairsharing_records' based on raw output
