@@ -1,30 +1,48 @@
 import os
+import json
+import logging
+from pathlib import Path
 
-"""
-Configuration for the MSCR (Metadata Schema & Crosswalk Registry) Module.
-Production Environment: mscr-release.2.rahtiapp.fi
-"""
+logger = logging.getLogger(__name__)
 
-# The base URL for the API
+# 1. API CONSTANTS
 MSCR_API_URL = "https://mscr-release.2.rahtiapp.fi/datamodel-api/v2"
-
-# Security: Get token from Environment Variable
-# Export in terminal: export MSCR_API_TOKEN="your-token-from-ui"
-MSCR_API_TOKEN = os.getenv("MSCR_API_TOKEN", "PASTE_YOUR_TOKEN_HERE_IF_TESTING_LOCALLY")
-
-# Timeout for API requests in seconds
 MSCR_TIMEOUT = 60
+MOCK_MODE = False  # Set to False now that we have credentials
 
-# CROSSWALK REGISTRY
-# Look up these UUIDs in the MSCR UI and paste here
-# For now, these are placeholders.
-CROSSWALK_IDS = {
-    # Case 1: re3data XML -> EDEN JSON-LD
-    "re3data_to_eden": "REPLACE-WITH-REAL-UUID-FROM-MSCR-UI",
+# 2. CREDENTIAL LOADING
+def load_mscr_token():
+    """
+    Attempts to load the MSCR token from the mscr_credentials.json file.
+    Fallback to Environment variable.
+    """
+    # Try looking in the local mscr directory based on current file location
+    current_dir = Path(__file__).parent
+    cred_file = current_dir / "mscr_credentials.json"
     
-    # Case 2: Generic Schema.org -> EDEN JSON-LD
-    "schemaorg_to_eden": "REPLACE-WITH-REAL-UUID-FROM-MSCR-UI"
-}
+    # Check if file exists
+    if cred_file.exists():
+        try:
+            with open(cred_file, 'r') as f:
+                data = json.load(f)
+                token = data.get("token")
+                if token:
+                    logger.info("Loaded MSCR token from credentials file.")
+                    return token
+        except Exception as e:
+            logger.error(f"Failed to read credentials file: {e}")
 
-# Toggle Mock Mode (Set to False to use the real URL above)
-MOCK_MODE = False
+    # Fallback to Env
+    return os.getenv("MSCR_API_TOKEN", None)
+
+MSCR_API_TOKEN = load_mscr_token()
+
+# 3. CROSSWALK REGISTRY CONFIGURATION
+# We will populate these IDs using the helper script in Step 4.
+CROSSWALK_IDS = {
+    # XML (Re3Data) -> EDEN JSON-LD
+    "re3data_to_eden": os.getenv("MSCR_CW_RE3DATA", "REPLACE_WITH_UUID_AFTER_RUNNING_DISCOVERY"),
+    
+    # JSON-LD (Schema.org) -> EDEN JSON-LD
+    "schemaorg_to_eden": os.getenv("MSCR_CW_SCHEMAORG", "REPLACE_WITH_UUID_AFTER_RUNNING_DISCOVERY")
+}
