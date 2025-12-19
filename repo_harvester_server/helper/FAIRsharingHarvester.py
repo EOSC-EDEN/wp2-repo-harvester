@@ -22,14 +22,15 @@ class FAIRsharingHarvester:
 
     def _authenticate(self):
         """
-        Authenticates with the FAIRsharing API using credentials from
-        environment variables to get a JWT for subsequent requests.
+        Authenticates with the FAIRsharing API. It first tries environment
+        variables, then falls back to a local credentials file.
         """
         username = os.environ.get('FAIRSHARING_USERNAME')
         password = os.environ.get('FAIRSHARING_PASSWORD')
 
         # Fallback to local credentials file if environment variables are not set
         if not username or not password:
+            print("FAIRsharing credentials could not be loaded.")
             self.logger.info("FAIRsharing credentials not in environment variables. Trying local file...")
             try:
                 cred_path = os.path.join(os.path.dirname(__file__), 'fairsharing_credentials.json')
@@ -75,11 +76,27 @@ class FAIRsharingHarvester:
         if not hostname:
             return None
 
-        domain_parts = hostname.split('.')
-        search_query = domain_parts[-2] if len(domain_parts) > 1 else domain_parts[0]
+        # Strategy 1: Search by hostname
+        metadata = self._search_fairsharing(hostname, catalog_url)
+        if metadata:
+            return metadata
 
+        # Strategy 2: Search by repository name (e.g., "borealisdata" from "borealisdata.ca")
+        repo_name = hostname.split('.')[0]
+        if repo_name != hostname:
+            print(f"Retrying FAIRsharing search with repository name: {repo_name}")
+            metadata = self._search_fairsharing(repo_name, catalog_url)
+            if metadata:
+                return metadata
+
+        return None
+
+    def _search_fairsharing(self, query, catalog_url):
+        """
+        Helper to search FAIRsharing API and fetch details for the first match.
+        """
         search_url = f"{self.api_url}/search/fairsharing_records/"
-        payload = {"q": search_query}
+        payload = {"q": query}
         auth_headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
@@ -94,8 +111,7 @@ class FAIRsharingHarvester:
             response.raise_for_status()
             
             results = response.json().get('data', [])
-            # print(f"RAW FAIRsharing API results: {json.dumps(results, indent=4)}")
-            return self._parse_search_results(results, hostname)
+            return self._parse_search_results(results, urlparse(catalog_url).hostname)
 
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Error querying FAIRsharing search API: {e}")
@@ -112,31 +128,25 @@ class FAIRsharingHarvester:
         for i, record in enumerate(results):
             self.logger.info(f"--- Processing record {i} ---")
             # print(f"Record keys: {record.keys()}")
-            
+
             if record.get('type') != 'fairsharing_records':
-                pass
+                continue
 
             attributes = record.get('attributes', {})
             metadata_nested = attributes.get('metadata', {})
             
             homepage = metadata_nested.get('homepage')
-            print(f"  - Name: {metadata_nested.get('name')}")
-            print(f"  - Homepage: {homepage}")
             
             if not homepage:
-                print("  - Skipping: No homepage found.")
                 continue
 
             try:
                 record_hostname = urlparse(homepage).hostname
                 if record_hostname:
                     normalized_record_hostname = record_hostname.lower().replace('www.', '', 1)
-                    print(f"    Comparing '{normalized_record_hostname}' with '{normalized_hostname}'")
                     if normalized_record_hostname == normalized_hostname:
-                        print(f"    -> Found a match!")
                         matching_records.append(record)
-            except Exception as e:
-                print(f"Error parsing URL: {e}")
+            except Exception:
                 continue
         
         if not matching_records:
@@ -145,6 +155,7 @@ class FAIRsharingHarvester:
 
         best_record = None
         for record in matching_records:
+            # Check status in nested metadata
             if record.get('attributes', {}).get('metadata', {}).get('status') == 'ready':
                 best_record = record
                 break
@@ -155,7 +166,7 @@ class FAIRsharingHarvester:
                     break
         
         if not best_record:
-            print(f"Found {len(matching_records)} match(es) on FAIRsharing for {hostname}, but none were active.")
+            self.logger.info(f"Found {len(matching_records)} match(es) on FAIRsharing for {hostname}, but none were active.")
             return None
 
         attributes = best_record.get('attributes', {})
@@ -166,6 +177,7 @@ class FAIRsharingHarvester:
             'title': metadata_nested.get('name'),
             'description': metadata_nested.get('description'),
             'landingPage': metadata_nested.get('homepage'),
+            'identifier': [metadata_nested.get('doi')] if metadata_nested.get('doi') else None
         }
         
         return {k: v for k, v in metadata.items() if v}
