@@ -2,9 +2,15 @@ import json
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 
 
-8#repouri = 'https://dummyrepository.org/'
+#repouri = 'https://dummyrepository.org/'
 
 repouri = 'https://www.pangaea.de/'
+#repouri = 'https://data.4tu.nl/'
+
+
+#repouri = 'https://data.sciencespo.fr/dataverse/cdsp'
+#repouri = 'https://borealisdata.ca/'
+
 
 harvester = RepositoryHarvester(repouri)
 

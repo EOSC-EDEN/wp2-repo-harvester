@@ -81,7 +81,7 @@ class FAIRsharingHarvester:
         if metadata:
             return metadata
 
-        # Strategy 2: Search by repository name (e.g., "borealis" from "borealisdata.ca")
+        # Strategy 2: Search by repository name (e.g., "borealisdata" from "borealisdata.ca")
         repo_name = hostname.split('.')[0]
         if repo_name != hostname:
             print(f"Retrying FAIRsharing search with repository name: {repo_name}")
@@ -130,7 +130,7 @@ class FAIRsharingHarvester:
             # print(f"Record keys: {record.keys()}")
 
             if record.get('type') != 'fairsharing_records':
-                pass
+                continue
 
             attributes = record.get('attributes', {})
             metadata_nested = attributes.get('metadata', {})
@@ -166,6 +166,7 @@ class FAIRsharingHarvester:
                     break
         
         if not best_record:
+            self.logger.info(f"Found {len(matching_records)} match(es) on FAIRsharing for {hostname}, but none were active.")
             return None
 
         attributes = best_record.get('attributes', {})
@@ -176,6 +177,7 @@ class FAIRsharingHarvester:
             'title': metadata_nested.get('name'),
             'description': metadata_nested.get('description'),
             'landingPage': metadata_nested.get('homepage'),
+            'identifier': [metadata_nested.get('doi')] if metadata_nested.get('doi') else None
         }
         
         return {k: v for k, v in metadata.items() if v}
