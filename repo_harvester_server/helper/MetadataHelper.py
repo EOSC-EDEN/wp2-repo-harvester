@@ -6,7 +6,7 @@ logging.basicConfig(
 )
 import re
 from pathlib import Path
-from lxml import etree
+from lxml import etree, html
 
 import rdflib
 from jsonschema.exceptions import ValidationError
@@ -43,6 +43,8 @@ class MetadataHelper:
         self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
         self.catalog_url = catalog_url
         self.catalog_html = catalog_html
+        if isinstance(self.catalog_html, str):
+            self.catalog_html = self.catalog_html.encode("utf-8")
         self.catalog_header = catalog_header
         self.signposting_helper = SignPostingHelper(self.catalog_url, self.catalog_html, self.catalog_header)
 
@@ -273,7 +275,8 @@ class MetadataHelper:
         metadata = {}
         if not isinstance(self.catalog_html, str): return metadata
         try:
-            doc = lxml_html.fromstring(self.catalog_html)
+            parser = html.HTMLParser(encoding='utf-8')
+            doc = html.fromstring(self.catalog_html, parser=parser)
             scripts = doc.xpath('//script[@type="application/ld+json"]/text()')
             for script_content in scripts:
                 if not script_content.strip(): continue
@@ -284,7 +287,9 @@ class MetadataHelper:
                     else:
                         extracted = self.get_jsonld_metadata_simple(script_content)
                     metadata.update(extracted)
-                except json.JSONDecodeError: continue
+                except json.JSONDecodeError as je:
+                    self.logger.error("Embedded JSON-LD decode Error:" + str(je))
+                    continue
         except Exception as e:
             self.logger.error("Loading embedded JSON-LD Error:"+str(e))
             #print(f"Loading embedded JSON-LD Error: {e}")
