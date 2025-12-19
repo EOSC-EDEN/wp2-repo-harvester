@@ -2,7 +2,7 @@ import requests
 import logging
 import json
 from .client import MSCRClient
-from .config import CROSSWALK_IDS
+from .config import CROSSWALK_IDS, MOCK_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,14 @@ class MSCRHarvester:
         # 2. Determine Crosswalk UUID
         crosswalk_uuid, source_fmt = self._determine_crosswalk_and_format()
         
-        if not crosswalk_uuid or "REPLACE" in crosswalk_uuid:
-            logger.error("❌ No valid Crosswalk ID configured. Run discover_crosswalks.py first.")
+        # In Mock Mode, we proceed even without a valid UUID
+        if not MOCK_MODE and (not crosswalk_uuid or "0000" in crosswalk_uuid):
+            logger.error("❌ No valid Crosswalk ID configured. Please create one in MSCR.")
             return
 
         # 3. Transform via MSCR
-        logger.info(f"🔄 Delegating transformation to MSCR (UUID: {crosswalk_uuid})...")
+        mode_str = "MOCK" if MOCK_MODE else "REAL"
+        logger.info(f"🔄 Delegating transformation ({mode_str} MODE)...")
         
         result = self.client.transform(
             raw_content=self._raw_content,
@@ -45,9 +47,8 @@ class MSCRHarvester:
         if result:
             self.metadata = result
             logger.info("✅ Transformation successful.")
-            # Optional: Dump to file for debug
-            # with open('output_debug.json', 'w') as f:
-            #     json.dump(result, f, indent=2)
+            # For debugging, we can print a snippet of the result
+            logger.debug(f"Result snippet: {str(result)[:100]}...")
         else:
             logger.error("❌ Transformation failed or returned empty.")
 
@@ -57,10 +58,14 @@ class MSCRHarvester:
             'Accept': 'application/json, application/xml, text/html'
         }
         try:
+            # We verify SSL=False only if you have issues with specific repo certificates, 
+            # otherwise keep verify=True for security.
             resp = requests.get(self.repo_url, headers=headers, timeout=15)
+            
             if resp.status_code == 200:
                 self._raw_content = resp.text
                 self._content_type = resp.headers.get('Content-Type', '').lower()
+                logger.info(f"Fetched {len(self._raw_content)} bytes (Type: {self._content_type})")
                 return True
             else:
                 logger.warning(f"HTTP GET failed: {resp.status_code}")
@@ -74,12 +79,13 @@ class MSCRHarvester:
         Returns: (UUID, format_string)
         """
         # Logic: Is it re3data?
-        if "re3data.org" in self.repo_url or "re3data" in self._raw_content[:500]:
+        # Check URL or Content content
+        if "re3data.org" in self.repo_url or "re3data" in (self._raw_content or "")[:500]:
             return CROSSWALK_IDS.get('re3data_to_eden'), "xml"
 
         # Logic: Is it JSON-LD?
-        if "application/ld+json" in self._content_type or "application/json" in self._content_type:
+        if "application/ld+json" in (self._content_type or "") or "application/json" in (self._content_type or ""):
             return CROSSWALK_IDS.get('schemaorg_to_eden'), "json"
 
-        # Fallback assumption: re3data XML
+        # Default fallback
         return CROSSWALK_IDS.get('re3data_to_eden'), "xml"

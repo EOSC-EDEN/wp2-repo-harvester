@@ -1,51 +1,95 @@
 import logging
-import sys
-
-# Update the import to point to the internal package
-# WAS: from mscr.client import MSCRClient
+import json
+import requests
 from repo_harvester_server.mscr.client import MSCRClient
 
-# Configure logging to see output clearly
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 
 def main():
-    print("--- MSCR Crosswalk Discovery ---")
+    print("--- MSCR Comprehensive Search ---")
+    
+    # Initialize
     try:
         client = MSCRClient()
     except Exception as e:
         print(f"❌ Error initializing client: {e}")
         return
-    
-    # 1. Check Auth
-    if client.check_connection():
-        print("✅ Authentication successful.")
-    else:
-        print("❌ Authentication failed. Check repo_harvester_server/mscr/mscr_credentials.json.")
-        return
 
-    # 2. List Crosswalks
-    print("\nfetching available crosswalks...")
-    crosswalks = client.get_all_crosswalks()
+    # 1. Fetch ALL items (Search API)
+    # We set limit=200 to cover the 104 items reported
+    endpoint = f"{client.api_url}/frontend/mscrSearch"
+    params = {
+        'limit': 200, 
+        'type': 'CROSSWALK' # Filter strictly for Crosswalks (excludes Schemas)
+    }
     
-    found = False
-    for cw in crosswalks:
-        # Depending on API structure, adjust fields. Usually has 'name', 'pid' or 'id'
-        cw_name = cw.get('label') or cw.get('name') or "Unknown Name"
-        cw_id = cw.get('pid') or cw.get('id')
-        cw_desc = cw.get('description', '')
+    print(f"🔍 Searching {endpoint} for Crosswalks...")
+    
+    try:
+        response = requests.get(endpoint, headers=client.headers, params=params, timeout=15)
         
-        print(f"ID: {cw_id} | Name: {cw_name}")
-        
-        # Heuristic to find relevant ones
-        if "re3data" in cw_name.lower() or "re3data" in cw_desc.lower():
-            print(f"   >>> POTENTIAL MATCH FOR re3data: {cw_id}")
-            found = True
-        if "schema" in cw_name.lower() or "json" in cw_name.lower():
-            print(f"   >>> POTENTIAL MATCH FOR Schema.org: {cw_id}")
-            found = True
+        if response.status_code != 200:
+            print(f"❌ API Error {response.status_code}: {response.text}")
+            return
 
-    if not found:
-        print("\n⚠️ No obvious crosswalks found. You may need to create one via the MSCR UI.")
+        data = response.json()
+        
+        # Extract the list of hits from ElasticSearch response structure
+        # Structure is usually: hits -> hits -> [ {_source: ...}, ... ]
+        raw_hits = data.get('hits', {}).get('hits', [])
+        
+        print(f"✅ Retrieved {len(raw_hits)} crosswalks.")
+        print("-" * 60)
+        print(f"{'PID':<45} | {'Name/Label':<30}")
+        print("-" * 60)
+
+        found_re3data = False
+        found_schema = False
+
+        for hit in raw_hits:
+            source = hit.get('_source', {})
+            
+            # Extract useful fields
+            pid = source.get('pid') or source.get('id') or "N/A"
+            # Label might be a dict {"en": "..."} or a string
+            label_obj = source.get('label', {})
+            if isinstance(label_obj, dict):
+                label = label_obj.get('en') or list(label_obj.values())[0] or "Unnamed"
+            else:
+                label = str(label_obj)
+            
+            description = str(source.get('description', '')).lower()
+            full_text = (label + " " + description).lower()
+
+            # --- MATCHING LOGIC ---
+            is_match = False
+            
+            # Check for Re3Data
+            if "re3" in full_text or "data" in full_text and "repo" in full_text:
+                print(f"🌟 POTENTIAL RE3DATA:  {pid:<45} | {label}")
+                found_re3data = True
+                is_match = True
+
+            # Check for EDEN / Schema.org
+            if "eden" in full_text or "schema" in full_text or "json" in full_text:
+                print(f"🌟 POTENTIAL SCHEMA:   {pid:<45} | {label}")
+                found_schema = True
+                is_match = True
+            
+            # Print everything else just in case (optional, maybe too noisy)
+            # else:
+            #     print(f"  {pid:<45} | {label}")
+
+        print("-" * 60)
+        
+        if not found_re3data:
+            print("⚠️ Could not definitively find a 're3data' crosswalk.")
+        if not found_schema:
+            print("⚠️ Could not definitively find a 'schema.org' crosswalk.")
+
+    except Exception as e:
+        print(f"❌ Script failed: {e}")
 
 if __name__ == "__main__":
     main()

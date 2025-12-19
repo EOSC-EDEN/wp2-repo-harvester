@@ -23,7 +23,7 @@ class MSCRClient:
         if not self.token:
             return False
         try:
-            # /v2/user is a good endpoint to test auth
+            # /v2/user is a reliable endpoint to test auth
             endpoint = f"{self.api_url}/user"
             response = requests.get(endpoint, headers=self.headers, timeout=10)
             return response.status_code == 200
@@ -33,13 +33,32 @@ class MSCRClient:
 
     def get_all_crosswalks(self):
         """
-        Retrieves a list of all available crosswalks to help identify correct UUIDs.
+        Retrieves a list of all available crosswalks using the frontend search API.
         """
-        endpoint = f"{self.api_url}/crosswalk"
+        # CORRECTED: Use the search endpoint instead of the direct resource endpoint
+        endpoint = f"{self.api_url}/frontend/mscrSearch"
+        
+        # Filter by type 'CROSSWALK' to avoid getting Schemas
+        params = {
+            'type': 'CROSSWALK',
+            'limit': 100  # Request enough items to find what we need
+        }
+
         try:
-            response = requests.get(endpoint, headers=self.headers, timeout=MSCR_TIMEOUT)
+            response = requests.get(endpoint, headers=self.headers, params=params, timeout=MSCR_TIMEOUT)
+            
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                
+                # The search API often wraps results. 
+                # We handle a direct list or a wrapper like {'items': [...]} or {'content': [...]}
+                if isinstance(data, list):
+                    return data
+                elif isinstance(data, dict):
+                    return data.get('items') or data.get('content') or data.get('results') or []
+                
+                logger.warning(f"Unexpected response format: {type(data)}")
+                return []
             else:
                 logger.error(f"Failed to list crosswalks: {response.text}")
                 return []
@@ -50,10 +69,6 @@ class MSCRClient:
     def transform(self, raw_content: str, crosswalk_id: str, source_format="xml"):
         """
         Uploads content to MSCR /transform endpoint.
-        
-        :param raw_content: The XML or JSON string to transform.
-        :param crosswalk_id: The UUID of the crosswalk.
-        :param source_format: 'xml' or 'json' (used to name the dummy file).
         """
         if MOCK_MODE:
             return self._get_mock_response()
@@ -64,14 +79,15 @@ class MSCRClient:
 
         endpoint = f"{self.api_url}/transform"
         
-        # Prepare params
-        params = {
+        # 1. Prepare Parameters
+        data = {
             'crosswalkId': crosswalk_id,
-            'outputMethod': 'json' # We want the result back as JSON
+            'outputMethod': 'json' 
         }
         
-        # Prepare file payload
-        # MSCR determines input type often by file extension or content sniffing
+        # 2. Prepare File (Multipart Upload)
+        # MSCR needs a file-like object. 
+        # We explicitly set the filename and mime-type.
         filename = "upload.json" if source_format == "json" else "upload.xml"
         mime_type = "application/json" if source_format == "json" else "text/xml"
 
@@ -82,22 +98,20 @@ class MSCRClient:
         try:
             logger.info(f"Sending content to MSCR (Crosswalk: {crosswalk_id})...")
             
-            # Note: Do not include Content-Type header manually when using 'files', 
-            # requests handles multipart boundary automatically.
+            # Note: headers should NOT include Content-Type, requests sets it for multipart
             response = requests.post(
                 endpoint,
-                headers={'X-API-KEY': self.token}, # Only auth header here
-                data=params,
+                headers={'X-API-KEY': self.token}, 
+                data=data,
                 files=files,
                 timeout=MSCR_TIMEOUT
             )
             
             if response.status_code == 200:
-                # The API returns the transformed JSON content directly
+                # Success - return the JSON
                 try:
                     return response.json()
                 except json.JSONDecodeError:
-                    # Fallback if it returns stringified JSON
                     return json.loads(response.text)
             else:
                 logger.error(f"MSCR Transformation Error {response.status_code}: {response.text}")
