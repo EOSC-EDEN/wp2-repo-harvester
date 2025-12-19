@@ -38,6 +38,7 @@ class RepositoryHarvester:
         self.catalog_html = None
         self.metadata = []
         self.metadata_helper = None
+        self.catalog_ids = [self.catalog_url]
 
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)
@@ -51,6 +52,11 @@ class RepositoryHarvester:
         try:
             response = requests.get(self.catalog_url, headers=headers, timeout=10)
             response.raise_for_status()
+            #using the canonical url to identify the resource
+            if response.url != self.catalog_url:
+                self.logger.warning("Redirected to URI: %s , so will use this as the canonical URL", response.url)
+                self.catalog_ids.append(response.url)
+                self.catalog_url = response.url
             self.catalog_html = response.text
             self.catalog_header = response.headers
             self.metadata_helper = MetadataHelper(self.catalog_url, self.catalog_html, self.catalog_header)
@@ -85,14 +91,17 @@ class RepositoryHarvester:
                     new_metadata['identifier'] = self.catalog_url
             self.metadata.append({'source': source, 'metadata': new_metadata})
 
-    def harvest(self):
+    def harvest(self, where=None):
         """
         Main entry point.
         1. Tries to harvest directly from the website (Self-Hosted).
         2. If that fails to find a Title, falls back to re3data (Registry).
+        :param where str: default None, the source to be harvested can be either 'self-hosted' or 'registry'
         """
-        self.harvest_self_hosted_metadata()
-        self.harvest_registry_metadata()
+        if not where or where == 'self-hosted':
+            self.harvest_self_hosted_metadata()
+        if not where or where == 'registry':
+            self.harvest_registry_metadata()
         return self.export(True)
 
     def harvest_registry_metadata(self):
@@ -139,7 +148,9 @@ class RepositoryHarvester:
         """
         Exports harvested metadata to DCAT JSON-LD.
         It uses the MetadataHelper export method which is based on JMESPATH see: JMESPATHQueries.py
-        Some additional metadata is added here to the resulting dict
+        Some additional metadata is added here to the resulting
+
+        :param save bool , indicates if the record shall be saved or not (in FUSEKI).
         """
         self.logger.info("--- Starting Export ---")
         final_records = []
