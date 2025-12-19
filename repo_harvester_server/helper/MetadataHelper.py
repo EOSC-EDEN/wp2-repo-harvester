@@ -273,11 +273,12 @@ class MetadataHelper:
 
     def get_embedded_jsonld_metadata(self,  mode = 'rdflib'):
         metadata = {}
-        if not isinstance(self.catalog_html, str): return metadata
+        if not isinstance(self.catalog_html, bytes): return metadata
         try:
             parser = html.HTMLParser(encoding='utf-8')
             doc = html.fromstring(self.catalog_html, parser=parser)
             scripts = doc.xpath('//script[@type="application/ld+json"]/text()')
+            #<script type="application/ld+json">
             for script_content in scripts:
                 if not script_content.strip(): continue
                 try:
