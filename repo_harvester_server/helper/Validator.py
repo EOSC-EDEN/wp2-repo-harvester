@@ -56,16 +56,12 @@ class EndpointValidator:
         """
         suffix = config['suffix']
         
+        # Replace placeholder if present
+        if suffix and '{endpointURI}' in suffix:
+             suffix = suffix.replace('{endpointURI}', '')
+
         # Construct target URL
         if suffix:
-            # Replace placeholder if present
-            if '{endpointURI}' in suffix:
-                 # This is a bit tricky as the CSV has {endpointURI} placeholders.
-                 # For now, let's assume the suffix is just the part AFTER the URL.
-                 # If the CSV has full query templates, we might need more complex logic.
-                 # Based on your CSV, most are like "?verb=Identify".
-                 suffix = suffix.replace('{endpointURI}', '')
-
             if suffix.startswith('?'):
                 separator = '&' if '?' in url else '?'
                 target_url = f"{url}{separator}{suffix.lstrip('?')}"
@@ -75,6 +71,7 @@ class EndpointValidator:
                 # If suffix doesn't start with / or ?, just append it
                 target_url = f"{url.rstrip('/')}/{suffix.lstrip('/')}"
         else:
+            # If suffix is empty (or became empty after replacement), do NOT append a slash.
             target_url = url
 
         # Prepare headers
