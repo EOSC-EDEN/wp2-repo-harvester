@@ -1,5 +1,7 @@
 import json
 import logging
+import urllib
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -392,6 +394,8 @@ class MetadataHelper:
             for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
                 service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
                 if service_res.get('endpoint_uri'):
+                    #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
+                    service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&")
                     if service_res.get('type') == 'SearchAction':
                         service_res['output_format'] = 'text/html'
                         service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
