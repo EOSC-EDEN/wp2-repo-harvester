@@ -3,11 +3,17 @@ from urllib.parse import urlparse
 from lxml import etree
 import os
 import csv
-
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 class Re3DataHarvester:
     """
     A harvester for fetching metadata from the re3data.org registry.
     """
+    logger = logging.getLogger('Re3DataHarvester')
+
     def __init__(self):
         self.api_url = "https://www.re3data.org/api/beta"
         self.ns = {"r3d": "http://www.re3data.org/schema/2-2"}
@@ -24,7 +30,7 @@ class Re3DataHarvester:
                     if row['Acronym']:
                         mappings[row['Acronym']] = row['URI']
         except FileNotFoundError:
-            print(f"Warning: Service mapping file not found at {csv_path}")
+            self.logger.warning(f"Warning: Service mapping file not found at {csv_path}")
         return mappings
 
     def harvest(self, catalog_url):
@@ -32,7 +38,7 @@ class Re3DataHarvester:
         Public method to harvest metadata for a given URL.
         It searches by the domain and then verifies the results.
         """
-        print("Harvesting from re3data...")
+        self.logger.info("-- Harvesting from re3data -- ")
         hostname = urlparse(catalog_url).hostname
         if not hostname:
             return None
