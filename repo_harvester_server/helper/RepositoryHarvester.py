@@ -144,6 +144,51 @@ class RepositoryHarvester:
         except Exception as e:
             self.logger.error(f"An error occurred during self-hosted harvest: {e}")
 
+    def count_triples(self,obj):
+        if not isinstance(obj, dict):
+            return 0
+        count = 0
+        for key, val in obj.items():
+            if key in ['@context', '@id']:
+                continue
+            if isinstance(val, list):
+                count += len(val)
+                count += sum(self.count_triples(v) for v in val if isinstance(v, dict))
+            elif isinstance(val, dict):
+                count += 1 + self.count_triples(val)
+            else:
+                count += 1
+        return count
+
+    def _count_triples(self,d):
+        n = 0
+        for k, v in d.items():
+            if k == "@context":
+                continue  # context does not produce triples
+
+            # Count rdf:type triples
+            if k == "@type":
+                n += len(v) if isinstance(v, list) else 1
+                continue
+
+            # If value is a dict → one triple to link + recurse inside
+            if isinstance(v, dict):
+                n += 1  # subject → predicate → object (link)
+                n += self._count_triples(v)  # recurse inside
+
+            # If value is a list → one triple per element + recurse if element is dict
+            elif isinstance(v, list):
+                for item in v:
+                    n += 1  # subject → predicate → object
+                    if isinstance(item, dict):
+                        n += self._count_triples(item)
+
+            # Literal → one triple
+            else:
+                n += 1
+
+        return n
+
     def export(self, save=False):
         """
         Exports harvested metadata to DCAT JSON-LD.
@@ -169,6 +214,7 @@ class RepositoryHarvester:
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
 
             export_record = self.metadata_helper.export(metadata_chunk)
+            counted_triples = self._count_triples(export_record)
             primary_source = export_record.get('prov:hadPrimarySource')
             #this would ignore feed metadata etc which have no repo info per se
             if primary_source:
@@ -189,8 +235,13 @@ class RepositoryHarvester:
 
                 final_records.append(export_record)
                 self.logger.info(f"Successfully processed record from source: {source}")
+                ######################## saving to FUSEKI #######################
                 if save:
-                    self.save(graph_id, json.dumps(export_record))
+                    saved_triples = self.save(graph_id, json.dumps(export_record))
+                    print(saved_triples, counted_triples, self.count_triples(export_record))
+
+                    if saved_triples < counted_triples:
+                        self.logger.warning(f"Fuseki import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
             else:
                  self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
                 #print(f"Skipping export for source '{source}': No meaningful data to map.")
@@ -203,10 +254,11 @@ class RepositoryHarvester:
         Saves a named graph in a JENA FUSEKI triple store
         :param graph_uri:
         :param graph_jsonld:
-        :return:
+        :return: int, number of saved triples
         """
         #TODO: HTTP Basic Auth
         #TODO: check if server is running etc..
+        count = 0
         try:
             headers = {
                 "Content-Type": "application/ld+json"
@@ -220,6 +272,7 @@ class RepositoryHarvester:
                 headers=headers
             )
             print("Status:", response.status_code)
-            print(response.text)
+            count = response.json().get('count')
         except Exception as e:
             self.logger.error(f"An error occurred while saving graph: {e}")
+        return count
