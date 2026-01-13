@@ -75,7 +75,7 @@ class FAIRsharingHarvester:
             return None
 
         # Strategy 1: Search by hostname
-        metadata = self._search_fairsharing(hostname)
+        metadata = self._search_fairsharing(hostname, hostname_filter=hostname)
         if metadata:
             return metadata
 
@@ -83,7 +83,7 @@ class FAIRsharingHarvester:
         repo_name = hostname.split('.')[0]
         if repo_name != hostname:
             self.logger.info(f"Retrying FAIRsharing search with repository name: {repo_name}")
-            metadata = self._search_fairsharing(repo_name)
+            metadata = self._search_fairsharing(repo_name, hostname_filter=hostname)
             if metadata:
                 return metadata
 
@@ -94,9 +94,9 @@ class FAIRsharingHarvester:
         Harvests metadata directly from FAIRsharing using its DOI.
         """
         self.logger.info(f"-- Harvesting from FAIRsharing by ID: {fairsharing_id} --")
-        return self._search_fairsharing(fairsharing_id)
+        return self._search_fairsharing(fairsharing_id, expected_doi=fairsharing_id)
 
-    def _search_fairsharing(self, query):
+    def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None):
         """
         Helper to search FAIRsharing API and fetch details for the first match.
         """
@@ -116,24 +116,80 @@ class FAIRsharingHarvester:
             response.raise_for_status()
             
             results = response.json().get('data', [])
-            # Since we might be searching by URL or by ID, we don't have a single hostname to verify against.
-            # We will just take the first valid result.
-            return self._parse_search_results(results)
+            return self._parse_search_results(results, hostname_filter, expected_doi)
 
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Error querying FAIRsharing search API: {e}")
         return None
 
-    def _parse_search_results(self, results):
+    def _parse_search_results(self, results, hostname_filter=None, expected_doi=None):
         """
         Parses the FAIRsharing JSON search results to find the best match.
         """
         if not results:
             return None
 
-        # For now, we assume the first result is the best one, especially when searching by ID.
-        best_record = results[0]
+        matching_records = []
         
+        # If we have an expected DOI, filter strictly by that
+        if expected_doi:
+            for record in results:
+                metadata_nested = record.get('attributes', {}).get('metadata', {})
+                if metadata_nested.get('doi') == expected_doi:
+                    matching_records.append(record)
+                    break # Found exact match
+        
+        # Otherwise, filter by hostname if provided
+        elif hostname_filter:
+            normalized_hostname = hostname_filter.lower().replace('www.', '', 1)
+            for record in results:
+                if record.get('type') != 'fairsharing_records':
+                    continue
+
+                homepage = record.get('attributes', {}).get('metadata', {}).get('homepage')
+                if not homepage:
+                    continue
+
+                try:
+                    record_hostname = urlparse(homepage).hostname
+                    if record_hostname:
+                        normalized_record_hostname = record_hostname.lower().replace('www.', '', 1)
+                        if normalized_record_hostname == normalized_hostname:
+                            matching_records.append(record)
+                except Exception:
+                    continue
+        
+        # If no filters were applied (or no matches found yet), just take the first result?
+        # No, that's dangerous. If we had filters and found nothing, we should return None.
+        # If we had NO filters (which shouldn't happen with current logic), we might take the first.
+        
+        if not matching_records:
+            # If we were searching by ID and found nothing, return None
+            if expected_doi:
+                self.logger.warning(f"No FAIRsharing record found matching DOI: {expected_doi}")
+                return None
+            
+            # If we were searching by hostname and found nothing
+            if hostname_filter:
+                return None
+                
+            # Fallback (shouldn't be reached with current logic)
+            return None
+
+        best_record = None
+        for record in matching_records:
+            if record.get('attributes', {}).get('metadata', {}).get('status') == 'ready':
+                best_record = record
+                break
+        if not best_record:
+            for record in matching_records:
+                if record.get('attributes', {}).get('metadata', {}).get('status') != 'deprecated':
+                    best_record = record
+                    break
+        
+        if not best_record:
+            return None
+
         attributes = best_record.get('attributes', {})
         metadata_nested = attributes.get('metadata', {})
         

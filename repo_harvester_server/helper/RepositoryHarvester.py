@@ -124,7 +124,8 @@ class RepositoryHarvester:
         fairsharing_id = None
         if re3data_meta:
             for identifier in re3data_meta.get('identifier', []):
-                if 'fairsharing' in identifier:
+                # Case-insensitive check for FAIRsharing ID
+                if 'fairsharing' in identifier.lower():
                     fairsharing_id = identifier
                     break
         
@@ -142,15 +143,12 @@ class RepositoryHarvester:
                 if isinstance(identifier, str) and identifier.startswith('r3d'):
                     re3data_id = identifier
                     break
-            
             if re3data_id:
                 re3data_meta = re3data_harvester.harvest_by_id(re3data_id)
-            else:
-                # Fallback: search re3data by the name we got from FAIRsharing
-                repo_name = fairsharing_meta.get('title')
-                if repo_name:
-                    self.logger.info(f"Bridging to re3data by name: {repo_name}")
-                    re3data_meta = re3data_harvester.harvest_by_name(repo_name)
+            # Fallback: Try bridging by name if no ID found
+            elif fairsharing_meta.get('title'):
+                self.logger.info(f"Bridging to re3data by name: {fairsharing_meta.get('title')}")
+                re3data_meta = re3data_harvester.harvest_by_name(fairsharing_meta.get('title'))
 
         # 4. Merge all collected metadata
         self.merge_metadata(re3data_meta, 're3data')
