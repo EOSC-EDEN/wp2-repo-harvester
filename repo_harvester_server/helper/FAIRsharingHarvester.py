@@ -28,9 +28,7 @@ class FAIRsharingHarvester:
         username = os.environ.get('FAIRSHARING_USERNAME')
         password = os.environ.get('FAIRSHARING_PASSWORD')
 
-        # Fallback to local credentials file if environment variables are not set
         if not username or not password:
-            print("FAIRsharing credentials could not be loaded.")
             self.logger.info("FAIRsharing credentials not in environment variables. Trying local file...")
             try:
                 cred_path = os.path.join(os.path.dirname(__file__), 'fairsharing_credentials.json')
@@ -46,7 +44,7 @@ class FAIRsharingHarvester:
                 return
 
         if not username or not password:
-            self.logger.warning("FAIRsharing credentials (FAIRSHARING_USERNAME, FAIRSHARING_PASSWORD) not found in environment variables. Skipping authentication.")
+            self.logger.warning("FAIRsharing credentials could not be loaded.")
             return
 
         url = f"{self.api_url}/users/sign_in"
@@ -77,21 +75,28 @@ class FAIRsharingHarvester:
             return None
 
         # Strategy 1: Search by hostname
-        metadata = self._search_fairsharing(hostname, catalog_url)
+        metadata = self._search_fairsharing(hostname)
         if metadata:
             return metadata
 
-        # Strategy 2: Search by repository name (e.g., "borealisdata" from "borealisdata.ca")
+        # Strategy 2: Search by repository name
         repo_name = hostname.split('.')[0]
         if repo_name != hostname:
-            print(f"Retrying FAIRsharing search with repository name: {repo_name}")
-            metadata = self._search_fairsharing(repo_name, catalog_url)
+            self.logger.info(f"Retrying FAIRsharing search with repository name: {repo_name}")
+            metadata = self._search_fairsharing(repo_name)
             if metadata:
                 return metadata
 
         return None
 
-    def _search_fairsharing(self, query, catalog_url):
+    def harvest_by_id(self, fairsharing_id):
+        """
+        Harvests metadata directly from FAIRsharing using its DOI.
+        """
+        self.logger.info(f"-- Harvesting from FAIRsharing by ID: {fairsharing_id} --")
+        return self._search_fairsharing(fairsharing_id)
+
+    def _search_fairsharing(self, query):
         """
         Helper to search FAIRsharing API and fetch details for the first match.
         """
@@ -111,64 +116,24 @@ class FAIRsharingHarvester:
             response.raise_for_status()
             
             results = response.json().get('data', [])
-            return self._parse_search_results(results, urlparse(catalog_url).hostname)
+            # Since we might be searching by URL or by ID, we don't have a single hostname to verify against.
+            # We will just take the first valid result.
+            return self._parse_search_results(results)
 
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Error querying FAIRsharing search API: {e}")
         return None
 
-    def _parse_search_results(self, results, hostname):
+    def _parse_search_results(self, results):
         """
         Parses the FAIRsharing JSON search results to find the best match.
         """
-        self.logger.info(f"FAIRsharing API returned {len(results)} results.")
-        matching_records = []
-        normalized_hostname = hostname.lower().replace('www.', '', 1)
-        
-        for i, record in enumerate(results):
-            self.logger.info(f"--- Processing record {i} ---")
-            # print(f"Record keys: {record.keys()}")
-
-            if record.get('type') != 'fairsharing_records':
-                continue
-
-            attributes = record.get('attributes', {})
-            metadata_nested = attributes.get('metadata', {})
-            
-            homepage = metadata_nested.get('homepage')
-            
-            if not homepage:
-                continue
-
-            try:
-                record_hostname = urlparse(homepage).hostname
-                if record_hostname:
-                    normalized_record_hostname = record_hostname.lower().replace('www.', '', 1)
-                    if normalized_record_hostname == normalized_hostname:
-                        matching_records.append(record)
-            except Exception:
-                continue
-        
-        if not matching_records:
-            print("No matching records found after filtering.")
+        if not results:
             return None
 
-        best_record = None
-        for record in matching_records:
-            # Check status in nested metadata
-            if record.get('attributes', {}).get('metadata', {}).get('status') == 'ready':
-                best_record = record
-                break
-        if not best_record:
-            for record in matching_records:
-                if record.get('attributes', {}).get('metadata', {}).get('status') != 'deprecated':
-                    best_record = record
-                    break
+        # For now, we assume the first result is the best one, especially when searching by ID.
+        best_record = results[0]
         
-        if not best_record:
-            self.logger.info(f"Found {len(matching_records)} match(es) on FAIRsharing for {hostname}, but none were active.")
-            return None
-
         attributes = best_record.get('attributes', {})
         metadata_nested = attributes.get('metadata', {})
         
