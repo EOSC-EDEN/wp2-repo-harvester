@@ -38,41 +38,98 @@ class Re3DataHarvester:
         Public method to harvest metadata for a given URL.
         It searches by the domain and then verifies the results.
         """
-        self.logger.info("-- Harvesting from re3data -- ")
+        self.logger.info("-- Harvesting from re3data by URL -- ")
         hostname = urlparse(catalog_url).hostname
         if not hostname:
             return None
+        
+        return self._search_and_verify(hostname, 'hostname')
 
+    def harvest_by_name(self, repo_name):
+        """
+        Public method to harvest metadata by repository name.
+        """
+        self.logger.info(f"-- Harvesting from re3data by Name: {repo_name} --")
+        return self._search_and_verify(repo_name, 'name')
+
+    def _search_and_verify(self, query, search_type):
         try:
-            search_url = f"{self.api_url}/repositories?query={hostname}"
+            search_url = f"{self.api_url}/repositories?query={query}"
+            self.logger.info(f"Querying re3data search API: {search_url}")
             resp = requests.get(search_url, timeout=15)
             resp.raise_for_status()
-
             root = etree.fromstring(resp.content)
             
-            for repo_id_element in root.findall('.//id'):
-                repo_id = repo_id_element.text
+            # Iterate through <repository> elements in the search result list
+            for repo_element in root.findall('.//repository'):
+                repo_id_elem = repo_element.find('id')
+                repo_name_elem = repo_element.find('name')
                 
-                repo_url = f"{self.api_url}/repository/{repo_id}"
-                repo_resp = requests.get(repo_url, timeout=15)
-                if repo_resp.status_code != 200:
+                if repo_id_elem is None or not repo_id_elem.text:
+                    self.logger.warning("Found a search result with no ID, skipping.")
                     continue
-
-                repo_root = etree.fromstring(repo_resp.content)
-                repo_main_url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
                 
-                if repo_main_url_element is not None and repo_main_url_element.text:
-                    re3data_hostname = urlparse(repo_main_url_element.text).hostname
-                    if re3data_hostname and re3data_hostname.lower() == hostname.lower():
-                        print(f"Found verified re3data entry: {repo_url}")
-                        return self._parse_record(repo_root)
+                repo_id = repo_id_elem.text
+                
+                # Verification logic based on search type
+                if search_type == 'name':
+                    if repo_name_elem is not None and repo_name_elem.text:
+                        self.logger.info(f"Verifying name match for ID {repo_id}: Query='{query}', Found='{repo_name_elem.text}'")
+                        if query.lower() in repo_name_elem.text.lower():
+                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via name search: {repo_id}")
+                            return self.harvest_by_id(repo_id)
+                
+                elif search_type == 'hostname':
+                    # For hostname verification, we still need to fetch the full record to get the URL
+                    # because the search result list doesn't include the repositoryURL.
+                    repo_root = self._fetch_and_parse_record_xml(repo_id)
+                    if repo_root is None:
+                        continue
+                        
+                    repo_main_url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
+                    if repo_main_url_element is not None and repo_main_url_element.text:
+                        re3data_hostname = urlparse(repo_main_url_element.text).hostname
+                        self.logger.info(f"Verifying hostname match for ID {repo_id}: Query='{query}', Found='{re3data_hostname}'")
+                        if re3data_hostname and re3data_hostname.lower() == query.lower():
+                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via hostname search: {repo_id}")
+                            return self._parse_record(repo_root)
 
         except requests.exceptions.RequestException as e:
-            print(f"Re3data API request error: {e}")
+            self.logger.error(f"Re3data API request error during search for {query}: {e}")
         except etree.XMLSyntaxError as e:
-            print(f"Error parsing re3data XML: {e}")
+            self.logger.error(f"Error parsing re3data XML during search for {query}: {e}")
             
+        self.logger.warning(f"Could not find a verified re3data entry for query: '{query}'")
         return None
+
+    def harvest_by_id(self, re3data_id):
+        """
+        Harvests metadata directly from re3data using its re3data.orgIdentifier.
+        """
+        self.logger.info(f"-- Harvesting from re3data by ID: {re3data_id} --")
+        try:
+            repo_root = self._fetch_and_parse_record_xml(re3data_id)
+            if repo_root is not None:
+                self.logger.info(f"Successfully fetched re3data entry for ID: {re3data_id}")
+                return self._parse_record(repo_root)
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Re3data API request error during harvest by ID {re3data_id}: {e}")
+        except etree.XMLSyntaxError as e:
+            self.logger.error(f"Error parsing re3data XML during harvest by ID {re3data_id}: {e}")
+        return None
+
+    def _fetch_and_parse_record_xml(self, repo_id):
+        """
+        Helper method to fetch and parse the detailed XML record for a given repo_id.
+        """
+        try:
+            repo_url = f"{self.api_url}/repository/{repo_id}"
+            repo_resp = requests.get(repo_url, timeout=15)
+            repo_resp.raise_for_status()
+            return etree.fromstring(repo_resp.content)
+        except (requests.exceptions.RequestException, etree.XMLSyntaxError) as e:
+            self.logger.error(f"Failed to fetch or parse record for re3data ID {repo_id}: {e}")
+            return None
 
     def _parse_record(self, repo_root):
         """
@@ -126,12 +183,12 @@ class Re3DataHarvester:
         metadata = {
             'title': find_text(repo_root, ".//r3d:repositoryName"),
             'description': find_text(repo_root, ".//r3d:description"),
-            'identifier': [i for i in identifiers if i], # Clean out any None values
+            'identifier': [i for i in identifiers if i],
             'publisher': publishers if publishers else None,
-            'contact': find_all_text(repo_root, ".//r3d:repositoryContact"), # Now captures all contacts
+            'contact': find_all_text(repo_root, ".//r3d:repositoryContact"),
             'services': services if services else None,
-            'keywords': find_all_text(repo_root, ".//r3d:keyword"), # Now captures all keywords
-            'subject': find_all_text(repo_root, ".//r3d:subject") # Now captures all subjects
+            'keywords': find_all_text(repo_root, ".//r3d:keyword"),
+            'subject': find_all_text(repo_root, ".//r3d:subject")
         }
 
         return {k: v for k, v in metadata.items() if v}
