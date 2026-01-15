@@ -75,18 +75,22 @@ class FAIRsharingHarvester:
             return None
 
         # Strategy 1: Search by hostname
+        self.logger.info(f"Strategy 1: Searching FAIRsharing by hostname: '{hostname}'")
         metadata = self._search_fairsharing(hostname, hostname_filter=hostname)
         if metadata:
+            self.logger.info(f"Found FAIRsharing record via hostname search: {metadata.get('title')}")
             return metadata
 
         # Strategy 2: Search by repository name
         repo_name = hostname.split('.')[0]
         if repo_name != hostname:
-            self.logger.info(f"Retrying FAIRsharing search with repository name: {repo_name}")
+            self.logger.info(f"Strategy 2: Retrying FAIRsharing search with repository name: '{repo_name}'")
             metadata = self._search_fairsharing(repo_name, hostname_filter=hostname)
             if metadata:
+                self.logger.info(f"Found FAIRsharing record via name search: {metadata.get('title')}")
                 return metadata
 
+        self.logger.info("FAIRsharing harvest failed: No matching records found.")
         return None
 
     def harvest_by_id(self, fairsharing_id):
@@ -95,6 +99,18 @@ class FAIRsharingHarvester:
         """
         self.logger.info(f"-- Harvesting from FAIRsharing by ID: {fairsharing_id} --")
         return self._search_fairsharing(fairsharing_id, expected_doi=fairsharing_id)
+
+    def _get_root_domain(self, hostname):
+        """
+        Helper to extract the root domain (e.g., 'crossda.hr' from 'www.crossda.hr').
+        This is a simple heuristic that takes the last two parts.
+        """
+        if not hostname:
+            return None
+        parts = hostname.lower().split('.')
+        if len(parts) >= 2:
+            return f"{parts[-2]}.{parts[-1]}"
+        return hostname.lower()
 
     def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None):
         """
@@ -109,6 +125,7 @@ class FAIRsharingHarvester:
         }
 
         try:
+            self.logger.info(f"Querying FAIRsharing API: {search_url} with query='{query}'")
             response = requests.post(search_url, headers=auth_headers, data=json.dumps(payload), timeout=15)
             if response.status_code == 401:
                 self.logger.warning("FAIRsharing search failed: 401 Unauthorized. Check permissions.")
@@ -116,6 +133,7 @@ class FAIRsharingHarvester:
             response.raise_for_status()
             
             results = response.json().get('data', [])
+            self.logger.info(f"FAIRsharing API returned {len(results)} results.")
             return self._parse_search_results(results, hostname_filter, expected_doi)
 
         except requests.exceptions.RequestException as e:
@@ -133,15 +151,24 @@ class FAIRsharingHarvester:
         
         # If we have an expected DOI, filter strictly by that
         if expected_doi:
+            self.logger.info(f"Filtering results for exact DOI match: {expected_doi}")
             for record in results:
                 metadata_nested = record.get('attributes', {}).get('metadata', {})
-                if metadata_nested.get('doi') == expected_doi:
+                record_doi = metadata_nested.get('doi')
+                # Case-insensitive comparison for DOIs
+                if record_doi and expected_doi and record_doi.lower() == expected_doi.lower():
+                    self.logger.info(f"Match found! Record DOI '{record_doi}' matches expected DOI.")
                     matching_records.append(record)
-                    break # Found exact match
+                    break  # Found exact match
+                else:
+                    # self.logger.debug(f"Skipping record with DOI '{record_doi}'")
+                    pass
         
         # Otherwise, filter by hostname if provided
         elif hostname_filter:
-            normalized_hostname = hostname_filter.lower().replace('www.', '', 1)
+            query_root = self._get_root_domain(hostname_filter)
+            self.logger.info(f"Filtering results for hostname match: '{hostname_filter}' (Root: {query_root})")
+            
             for record in results:
                 if record.get('type') != 'fairsharing_records':
                     continue
@@ -153,15 +180,15 @@ class FAIRsharingHarvester:
                 try:
                     record_hostname = urlparse(homepage).hostname
                     if record_hostname:
-                        normalized_record_hostname = record_hostname.lower().replace('www.', '', 1)
-                        if normalized_record_hostname == normalized_hostname:
+                        found_root = self._get_root_domain(record_hostname)
+                        if query_root and found_root and query_root == found_root:
+                            self.logger.info(f"Match found! Record homepage '{homepage}' (Root: {found_root}) matches query root.")
                             matching_records.append(record)
+                        else:
+                            # self.logger.debug(f"Skipping record with homepage '{homepage}' (Root: {found_root})")
+                            pass
                 except Exception:
                     continue
-        
-        # If no filters were applied (or no matches found yet), just take the first result?
-        # No, that's dangerous. If we had filters and found nothing, we should return None.
-        # If we had NO filters (which shouldn't happen with current logic), we might take the first.
         
         if not matching_records:
             # If we were searching by ID and found nothing, return None
@@ -171,6 +198,7 @@ class FAIRsharingHarvester:
             
             # If we were searching by hostname and found nothing
             if hostname_filter:
+                self.logger.info(f"No records matched the hostname filter: {hostname_filter}")
                 return None
                 
             # Fallback (shouldn't be reached with current logic)
@@ -188,6 +216,7 @@ class FAIRsharingHarvester:
                     break
         
         if not best_record:
+            self.logger.info("Matching records found, but none were active/ready.")
             return None
 
         attributes = best_record.get('attributes', {})
