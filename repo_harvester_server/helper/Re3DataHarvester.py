@@ -52,6 +52,18 @@ class Re3DataHarvester:
         self.logger.info(f"-- Harvesting from re3data by Name: {repo_name} --")
         return self._search_and_verify(repo_name, 'name')
 
+    def _get_root_domain(self, hostname):
+        """
+        Helper to extract the root domain (e.g., 'crossda.hr' from 'www.crossda.hr').
+        This is a simple heuristic that takes the last two parts.
+        """
+        if not hostname:
+            return None
+        parts = hostname.lower().split('.')
+        if len(parts) >= 2:
+            return f"{parts[-2]}.{parts[-1]}"
+        return hostname.lower()
+
     def _search_and_verify(self, query, search_type):
         try:
             search_url = f"{self.api_url}/repositories?query={query}"
@@ -89,9 +101,15 @@ class Re3DataHarvester:
                     repo_main_url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
                     if repo_main_url_element is not None and repo_main_url_element.text:
                         re3data_hostname = urlparse(repo_main_url_element.text).hostname
-                        self.logger.info(f"Verifying hostname match for ID {repo_id}: Query='{query}', Found='{re3data_hostname}'")
-                        if re3data_hostname and re3data_hostname.lower() == query.lower():
-                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via hostname search: {repo_id}")
+                        
+                        # Use fuzzy root domain matching
+                        query_root = self._get_root_domain(query)
+                        found_root = self._get_root_domain(re3data_hostname)
+                        
+                        self.logger.info(f"Verifying hostname match for ID {repo_id}: Query='{query}' (Root: {query_root}), Found='{re3data_hostname}' (Root: {found_root})")
+                        
+                        if query_root and found_root and query_root == found_root:
+                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via fuzzy hostname search: {repo_id}")
                             return self._parse_record(repo_root)
 
         except requests.exceptions.RequestException as e:
