@@ -1,0 +1,52 @@
+name,URL_to_harvest,url FIDELIS,FAIRsharing ID,remarks
+4TU.ResearchData,https://data.4tu.nl/,https://community.data.4tu.nl/,2537,
+ADP - Social Science Data Archive,https://www.adp.fdv.uni-lj.si/,https://www.adp.fdv.uni-lj.si/,6680,
+AgroPortal,https://agroportal.lirmm.fr/,https://agroportal.lirmm.fr/,2540,repo of ontologies
+ARP Research Data Repository,https://repo.researchdata.hu/,https://repo.researchdata.hu/,4585,
+Austrian NeuroCloud,https://anc.plus.ac.at/index.html,https://anc.plus.ac.at/index.html,7250,
+Borealis (Canadian Dataverse Repository),https://borealisdata.ca/,https://borealisdata.ca/,2542,
+Camtree: the Cambridge Teacher Research Exchange,https://library.camtree.org/home,https://library.camtree.org/home,None,
+Center for Socio-Political Data (CDSP),https://data.sciencespo.fr/dataverse/cdsp,https://data.sciencespo.fr/dataverse/cdsp,4438,
+CER - Central Repository,https://cer.ihtm.bg.ac.rs/,https://cer.ihtm.bg.ac.rs/,None,
+Coscine,https://about.coscine.de/,https://about.coscine.de/,5377,RDM platform
+CROSSDA,https://www.crossda.hr/,https://www.crossda.hr/,4230,
+DAIS,https://dais.sanu.ac.rs/,https://dais.sanu.ac.rs/,None,
+DANS - Life Sciences,https://dans.knaw.nl/nl/life-sciences/,https://dans.knaw.nl/nl/life-sciences/,5214,FAIRsharing links https://lifesciences.datastations.nl/
+DANS - Social Sciences,https://dans.knaw.nl/nl/social-sciences-and-humanities/,https://dans.knaw.nl/nl/social-sciences-and-humanities/,5489,FAIRSharing links https://ssh.datastations.nl/
+DASS,https://dass.credi.ba/,https://dass.credi.ba/,3345,FAIRsharing name: DASS-BiH
+DataRepositóriUM,https://datarepositorium.uminho.pt/,https://datarepositorium.uminho.pt/,3845,
+DataverseLV,https://dv.dataverse.lv/dataverse/root,https://dv.dataverse.lv/dataverse/root,,
+DataverseNO,https://site.uit.no/dataverseno/,https://site.uit.no/dataverseno/,2955,FAIRsharing links to https://dataverse.no/
+DataverseUA,https://opendata.nas.gov.ua/,https://opendata.nas.gov.ua/,None,
+DTU DATA,https://data.dtu.dk/,https://data.dtu.dk/,None,
+Fairdata Services,https://www.fairdata.fi/,https://www.fairdata.fi/,6385,
+Finnish Social Science Data Archive,https://www.fsd.tuni.fi/en/,https://www.fsd.tuni.fi/en/,2997,
+FiVeR,https://fiver.ifvcns.rs/,https://fiver.ifvcns.rs/,None,
+GESIS- Leibniz Institute for the Social Science,https://www.gesis.org/en/data-services,https://www.gesis.org/en/data-services,None,"RDM platform, incl. repo"
+Goethe University Data Repository (GUDe),https://gude.uni-frankfurt.de/home,https://gude.uni-frankfurt.de/home,None,
+HOMEROS- Oscars Project,,https://oscars-project.eu/projects/homeros-harmonising-observations-multi-hazard-environments-research-open-science,None,project website
+INFRA-ART Spectral Library,https://infraart.inoe.ro/,https://infraart.inoe.ro/,6329,
+KU Leuven RDR,https://rdr.kuleuven.be/,https://rdr.kuleuven.be/,5905,
+The Language Bank of Finland,https://www.kielipankki.fi/language-bank/,https://www.kielipankki.fi/language-bank/,None,
+LiDA,https://lida.dataverse.lt/,https://lida.dataverse.lt/,4595,
+LINDAT CLARIAH-CZ,https://lindat.mff.cuni.cz/,https://lindat.mff.cuni.cz/,None,
+MorpheusML Model Repository,,https://morpheus.gitlab.io/,4401,"modeling and simulation environment, includes option to publish multicellular simulation models"
+myLaminin,,https://www.mylaminin.net/,None,"unclear. Commercial RDM, no obvious repo"
+Ortolang,https://www.ortolang.fr/en/home/,https://www.ortolang.fr/en/home/,None,
+Oxford Brookes University Radar,https://radar.brookes.ac.uk/radar/hierarchy.do?topic=86e2c9d7-ef43-4b54-a387-3223d30acd3b,https://radar.brookes.ac.uk/radar/hierarchy.do?topic=86e2c9d7-ef43-4b54-a387-3223d30acd3b,None,
+PANGAEA,https://pangaea.de/,https://www.pangaea.de/about/,2161,"small diff between URLs, e.g. no JSON-LD on the ""about"" page, FAIRsharing links to https://www,.pangaea.de"
+The Qualitative Data Repository,https://qdr.syr.edu/,https://qdr.syr.edu/,2506,
+Quetelet-Progedo,https://data.progedo.fr/,https://data.progedo.fr/,6525,
+"RADaR - Digital Repository ""Sinisa Stankovic""",https://radar.ibiss.bg.ac.rs/,https://www.ibiss.bg.ac.rs/sr-yu/o-institutu/istorijat/o-institutu,None,"FIDELIS links to institute, not assoc. repo"
+Recherche Data Gouv France,https://recherche.data.gouv.fr/en/page/about-recherche-data-gouv,https://recherche.data.gouv.fr/en/page/about-recherche-data-gouv,None,
+RiuNet,https://upv-es.libguides.com/acceso-abierto/riunet#s-lg-box-16339192,https://upv-es.libguides.com/acceso-abierto/riunet#s-lg-box-16339192,None,
+RIVEC,https://rivec.institut-palanka.rs/,https://institut-palanka.rs/rs,None,"FIDELIS links to institute, not assoc. repo"
+RoHub,https://www.rohub.org/,https://www.rohub.org/,4119,
+Sikt Research Data Archive,https://sikt.no/en/archiving-research-data,https://sikt.no/en/about-sikt,2597,"unclear. ""government IT provider delivering national services for education and research"", but incl. Repo"
+Slovak Archive of Social Data (SASD),https://sasd.sav.sk/en/,https://sasd.sav.sk/en/,None,
+STOREDB,https://www.storedb.org/store_v3/,https://www.storedb.org/store_v3/,2362,
+Strasbourg Astronomical Data Centre,https://cds.unistra.fr/,https://cds.unistra.fr/about/cds/,None,
+STRING Database,https://string-db.org/,https://string-db.org/cgi/input?sessionId=bMVuI2wd2eY5&input_page_show_search=on,1875,"FIDELIS hold the ""long"" URL, FAIRsharing links to https://string-db.org/"
+TROLLing,https://dataverse.no/dataverse/trolling,https://dataverse.no/dataverse/trolling,2929,
+UK Data Service,https://ukdataservice.ac.uk/about/,https://ukdataservice.ac.uk/about/,2502,
+World Data Center for Climate (WDCC),https://www.wdc-climate.de/ui/,https://www.wdc-climate.de/ui/,2493,FAIRsharing links to https://cera-www.dkrz.de/WDCC/ui/cerasearch/ which redirects to https://www.wdc-climate.de/ui/
