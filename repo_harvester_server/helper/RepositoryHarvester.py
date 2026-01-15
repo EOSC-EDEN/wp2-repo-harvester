@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 import requests
 import logging
+import re
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -106,18 +107,51 @@ class RepositoryHarvester:
 
     def harvest_registry_metadata(self):
         """
-        Orchestrates harvesting from all configured external registries.
+        Orchestrates harvesting from external registries with cross-referencing.
         """
         self.logger.info("--- Starting Registry Harvesting ---")
-
+        
         re3data_harvester = Re3DataHarvester()
-        re3data_meta = re3data_harvester.harvest(self.catalog_url)
-        print(f"RAW re3data METADATA: {json.dumps(re3data_meta, indent=4)}")
-        self.merge_metadata(re3data_meta, 're3data')
-
         fairsharing_harvester = FAIRsharingHarvester()
-        fairsharing_meta = fairsharing_harvester.harvest(self.catalog_url)
-        print(f"RAW FAIRsharing METADATA: {json.dumps(fairsharing_meta, indent=4)}")
+
+        re3data_meta = None
+        fairsharing_meta = None
+        
+        # 1. First pass on re3data
+        re3data_meta = re3data_harvester.harvest(self.catalog_url)
+        
+        # 2. Harvest FAIRsharing, using re3data's findings if available
+        fairsharing_id = None
+        if re3data_meta:
+            for identifier in re3data_meta.get('identifier', []):
+                # Case-insensitive check for FAIRsharing ID
+                if 'fairsharing' in identifier.lower():
+                    fairsharing_id = identifier
+                    break
+        
+        if fairsharing_id:
+            fairsharing_meta = fairsharing_harvester.harvest_by_id(fairsharing_id)
+        else:
+            fairsharing_meta = fairsharing_harvester.harvest(self.catalog_url)
+
+        # 3. Second pass on re3data (bridge), if the first pass failed
+        if not re3data_meta and fairsharing_meta:
+            # Try to find re3data ID in FAIRsharing metadata
+            re3data_id = None
+            for identifier in fairsharing_meta.get('identifier', []):
+                # Simple check for re3data ID format
+                if isinstance(identifier, str) and identifier.startswith('r3d'):
+                    re3data_id = identifier
+                    break
+            if re3data_id:
+                re3data_meta = re3data_harvester.harvest_by_id(re3data_id)
+            # Fallback: Try bridging by name if no ID found
+            elif fairsharing_meta.get('title'):
+                self.logger.info(f"Bridging to re3data by name: {fairsharing_meta.get('title')}")
+                re3data_meta = re3data_harvester.harvest_by_name(fairsharing_meta.get('title'))
+
+        # 4. Merge all collected metadata
+        self.merge_metadata(re3data_meta, 're3data')
         self.merge_metadata(fairsharing_meta, 'fairsharing')
 
         self.logger.info("--- Finished Registry Harvesting ---")
@@ -186,7 +220,6 @@ class RepositoryHarvester:
             # Literal → one triple
             else:
                 n += 1
-
         return n
 
     def export(self, save=False):
@@ -200,7 +233,7 @@ class RepositoryHarvester:
         self.logger.info("--- Starting Export ---")
         final_records = []
         if not self.metadata:
-            print("No metadata was harvested, nothing to export.")
+            self.logger.warning("No metadata was harvested, nothing to export.")
             return final_records
 
         for m in self.metadata:
@@ -244,7 +277,6 @@ class RepositoryHarvester:
                         self.logger.warning(f"Fuseki import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
             else:
                  self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
-                #print(f"Skipping export for source '{source}': No meaningful data to map.")
 
         self.logger.info("--- Finished Export ---")
         return final_records
