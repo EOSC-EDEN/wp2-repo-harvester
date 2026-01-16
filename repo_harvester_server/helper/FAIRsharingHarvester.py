@@ -100,17 +100,53 @@ class FAIRsharingHarvester:
         self.logger.info(f"-- Harvesting from FAIRsharing by ID: {fairsharing_id} --")
         return self._search_fairsharing(fairsharing_id, expected_doi=fairsharing_id)
 
-    def _get_root_domain(self, hostname):
+    def _normalize_hostname(self, hostname):
         """
-        Helper to extract the root domain (e.g., 'crossda.hr' from 'www.crossda.hr').
-        This is a simple heuristic that takes the last two parts.
+        Normalize a hostname by converting to lowercase and removing 'www.' prefix.
         """
         if not hostname:
             return None
-        parts = hostname.lower().split('.')
-        if len(parts) >= 2:
-            return f"{parts[-2]}.{parts[-1]}"
-        return hostname.lower()
+        hostname = hostname.lower()
+        if hostname.startswith('www.'):
+            hostname = hostname[4:]
+        return hostname
+
+    def _hostnames_match(self, query_hostname, record_hostname):
+        """
+        Check if two hostnames match, accounting for subdomains.
+
+        Returns True if:
+        - They are equal (after normalizing)
+        - One is a direct subdomain of the other (depth difference of 1)
+
+        This is more conservative than root-domain matching, which incorrectly matched
+        any hosts under the same TLD (e.g., 'data.dans.knaw.nl' with 'other.knaw.nl').
+
+        The depth check prevents matching deep subdomains with root domains:
+        - 'about.coscine.de' (3 parts) matches 'coscine.de' (2 parts) - diff 1 ✓
+        - 'data.dans.knaw.nl' (4 parts) does NOT match 'knaw.nl' (2 parts) - diff 2 ✗
+        - 'data.dans.knaw.nl' (4 parts) matches 'dans.knaw.nl' (3 parts) - diff 1 ✓
+        """
+        h1 = self._normalize_hostname(query_hostname)
+        h2 = self._normalize_hostname(record_hostname)
+
+        if not h1 or not h2:
+            return False
+
+        if h1 == h2:
+            return True
+
+        # Check if one is a subdomain of the other with max depth difference of 1
+        # e.g., "about.coscine.de" should match "coscine.de"
+        h1_parts = h1.split('.')
+        h2_parts = h2.split('.')
+        depth_diff = abs(len(h1_parts) - len(h2_parts))
+
+        if depth_diff == 1:
+            if h1.endswith('.' + h2) or h2.endswith('.' + h1):
+                return True
+
+        return False
 
     def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None):
         """
@@ -166,9 +202,8 @@ class FAIRsharingHarvester:
         
         # Otherwise, filter by hostname if provided
         elif hostname_filter:
-            query_root = self._get_root_domain(hostname_filter)
-            self.logger.info(f"Filtering results for hostname match: '{hostname_filter}' (Root: {query_root})")
-            
+            self.logger.info(f"Filtering results for hostname match: '{hostname_filter}'")
+
             for record in results:
                 if record.get('type') != 'fairsharing_records':
                     continue
@@ -179,14 +214,9 @@ class FAIRsharingHarvester:
 
                 try:
                     record_hostname = urlparse(homepage).hostname
-                    if record_hostname:
-                        found_root = self._get_root_domain(record_hostname)
-                        if query_root and found_root and query_root == found_root:
-                            self.logger.info(f"Match found! Record homepage '{homepage}' (Root: {found_root}) matches query root.")
-                            matching_records.append(record)
-                        else:
-                            # self.logger.debug(f"Skipping record with homepage '{homepage}' (Root: {found_root})")
-                            pass
+                    if record_hostname and self._hostnames_match(hostname_filter, record_hostname):
+                        self.logger.info(f"Match found! Record homepage '{homepage}' matches query hostname '{hostname_filter}'.")
+                        matching_records.append(record)
                 except Exception:
                     continue
         

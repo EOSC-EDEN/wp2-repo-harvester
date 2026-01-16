@@ -52,17 +52,53 @@ class Re3DataHarvester:
         self.logger.info(f"-- Harvesting from re3data by Name: {repo_name} --")
         return self._search_and_verify(repo_name, 'name')
 
-    def _get_root_domain(self, hostname):
+    def _normalize_hostname(self, hostname):
         """
-        Helper to extract the root domain (e.g., 'crossda.hr' from 'www.crossda.hr').
-        This is a simple heuristic that takes the last two parts.
+        Normalize a hostname by converting to lowercase and removing 'www.' prefix.
         """
         if not hostname:
             return None
-        parts = hostname.lower().split('.')
-        if len(parts) >= 2:
-            return f"{parts[-2]}.{parts[-1]}"
-        return hostname.lower()
+        hostname = hostname.lower()
+        if hostname.startswith('www.'):
+            hostname = hostname[4:]
+        return hostname
+
+    def _hostnames_match(self, query_hostname, record_hostname):
+        """
+        Check if two hostnames match, accounting for subdomains.
+
+        Returns True if:
+        - They are equal (after normalizing)
+        - One is a direct subdomain of the other (depth difference of 1)
+
+        This is more conservative than root-domain matching, which incorrectly matched
+        any hosts under the same TLD (e.g., 'data.dans.knaw.nl' with 'other.knaw.nl').
+
+        The depth check prevents matching deep subdomains with root domains:
+        - 'about.coscine.de' (3 parts) matches 'coscine.de' (2 parts) - diff 1 ✓
+        - 'data.dans.knaw.nl' (4 parts) does NOT match 'knaw.nl' (2 parts) - diff 2 ✗
+        - 'data.dans.knaw.nl' (4 parts) matches 'dans.knaw.nl' (3 parts) - diff 1 ✓
+        """
+        h1 = self._normalize_hostname(query_hostname)
+        h2 = self._normalize_hostname(record_hostname)
+
+        if not h1 or not h2:
+            return False
+
+        if h1 == h2:
+            return True
+
+        # Check if one is a subdomain of the other with max depth difference of 1
+        # e.g., "about.coscine.de" should match "coscine.de"
+        h1_parts = h1.split('.')
+        h2_parts = h2.split('.')
+        depth_diff = abs(len(h1_parts) - len(h2_parts))
+
+        if depth_diff == 1:
+            if h1.endswith('.' + h2) or h2.endswith('.' + h1):
+                return True
+
+        return False
 
     def _search_and_verify(self, query, search_type):
         try:
@@ -97,19 +133,15 @@ class Re3DataHarvester:
                     repo_root = self._fetch_and_parse_record_xml(repo_id)
                     if repo_root is None:
                         continue
-                        
+
                     repo_main_url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
                     if repo_main_url_element is not None and repo_main_url_element.text:
                         re3data_hostname = urlparse(repo_main_url_element.text).hostname
-                        
-                        # Use fuzzy root domain matching
-                        query_root = self._get_root_domain(query)
-                        found_root = self._get_root_domain(re3data_hostname)
-                        
-                        self.logger.info(f"Verifying hostname match for ID {repo_id}: Query='{query}' (Root: {query_root}), Found='{re3data_hostname}' (Root: {found_root})")
-                        
-                        if query_root and found_root and query_root == found_root:
-                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via fuzzy hostname search: {repo_id}")
+
+                        self.logger.info(f"Verifying hostname match for ID {repo_id}: Query='{query}', Found='{re3data_hostname}'")
+
+                        if self._hostnames_match(query, re3data_hostname):
+                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via hostname search: {repo_id}")
                             return self._parse_record(repo_root)
 
         except requests.exceptions.RequestException as e:
