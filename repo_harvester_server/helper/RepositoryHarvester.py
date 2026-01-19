@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
+from repo_harvester_server.helper.Validator import EndpointValidator
 
 from repo_harvester_server.config import FUSEKI_PATH
 
@@ -40,6 +41,7 @@ class RepositoryHarvester:
         self.metadata = []
         self.metadata_helper = None
         self.catalog_ids = [self.catalog_url]
+        self.validator = EndpointValidator()
 
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)
@@ -245,6 +247,17 @@ class RepositoryHarvester:
             if  metadata_chunk.get('services'):
                 if isinstance(metadata_chunk['services'], dict):
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
+                
+                # --- Endpoint Validation ---
+                for service in metadata_chunk['services']:
+                    endpoint = service.get('endpoint_uri')
+                    api_type = service.get('type', '')
+                    if endpoint:
+                        # Extract the short type name (e.g., 'OAI-PMH' from 're3data:API:OAI-PMH')
+                        short_type = api_type.split(':')[-1] if ':' in api_type else api_type
+                        validation_result = self.validator.validate_url(endpoint, short_type)
+                        # Add validation result to the service object using the key the JMESPath query expects
+                        service['validation_status'] = validation_result
 
             export_record = self.metadata_helper.export(metadata_chunk)
             counted_triples = self._count_triples(export_record)

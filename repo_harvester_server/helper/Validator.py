@@ -8,7 +8,7 @@ class EndpointValidator:
     def __init__(self, timeout=10):
         self.timeout = timeout
         self.headers = {
-            'User-Agent': 'ResearchMetadataHarvester/1.0'
+            'User-Agent': 'EDENHarvester/1.0'
         }
         self.protocol_configs = self._load_service_mappings()
 
