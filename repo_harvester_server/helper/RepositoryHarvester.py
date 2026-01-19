@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 import requests
 import logging
+import re
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -38,6 +39,7 @@ class RepositoryHarvester:
         self.catalog_html = None
         self.metadata = []
         self.metadata_helper = None
+        self.catalog_ids = [self.catalog_url]
 
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)
@@ -51,6 +53,11 @@ class RepositoryHarvester:
         try:
             response = requests.get(self.catalog_url, headers=headers, timeout=10)
             response.raise_for_status()
+            #using the canonical url to identify the resource
+            if response.url != self.catalog_url:
+                self.logger.warning("Redirected to URI: %s , so will use this as the canonical URL", response.url)
+                self.catalog_ids.append(response.url)
+                self.catalog_url = response.url
             self.catalog_html = response.text
             self.catalog_header = response.headers
             self.metadata_helper = MetadataHelper(self.catalog_url, self.catalog_html, self.catalog_header)
@@ -85,30 +92,66 @@ class RepositoryHarvester:
                     new_metadata['identifier'] = self.catalog_url
             self.metadata.append({'source': source, 'metadata': new_metadata})
 
-    def harvest(self):
+    def harvest(self, where=None):
         """
         Main entry point.
         1. Tries to harvest directly from the website (Self-Hosted).
         2. If that fails to find a Title, falls back to re3data (Registry).
+        :param where str: default None, the source to be harvested can be either 'self-hosted' or 'registry'
         """
-        self.harvest_self_hosted_metadata()
-        self.harvest_registry_metadata()
+        if not where or where == 'self-hosted':
+            self.harvest_self_hosted_metadata()
+        if not where or where == 'registry':
+            self.harvest_registry_metadata()
         return self.export(True)
 
     def harvest_registry_metadata(self):
         """
-        Orchestrates harvesting from all configured external registries.
+        Orchestrates harvesting from external registries with cross-referencing.
         """
         self.logger.info("--- Starting Registry Harvesting ---")
-
+        
         re3data_harvester = Re3DataHarvester()
-        re3data_meta = re3data_harvester.harvest(self.catalog_url)
-        print(f"RAW re3data METADATA: {json.dumps(re3data_meta, indent=4)}")
-        self.merge_metadata(re3data_meta, 're3data')
-
         fairsharing_harvester = FAIRsharingHarvester()
-        fairsharing_meta = fairsharing_harvester.harvest(self.catalog_url)
-        print(f"RAW FAIRsharing METADATA: {json.dumps(fairsharing_meta, indent=4)}")
+
+        re3data_meta = None
+        fairsharing_meta = None
+        
+        # 1. First pass on re3data
+        re3data_meta = re3data_harvester.harvest(self.catalog_url)
+        
+        # 2. Harvest FAIRsharing, using re3data's findings if available
+        fairsharing_id = None
+        if re3data_meta:
+            for identifier in re3data_meta.get('identifier', []):
+                # Case-insensitive check for FAIRsharing ID
+                if 'fairsharing' in identifier.lower():
+                    fairsharing_id = identifier
+                    break
+        
+        if fairsharing_id:
+            fairsharing_meta = fairsharing_harvester.harvest_by_id(fairsharing_id)
+        else:
+            fairsharing_meta = fairsharing_harvester.harvest(self.catalog_url)
+
+        # 3. Second pass on re3data (bridge), if the first pass failed
+        if not re3data_meta and fairsharing_meta:
+            # Try to find re3data ID in FAIRsharing metadata
+            re3data_id = None
+            for identifier in fairsharing_meta.get('identifier', []):
+                # Simple check for re3data ID format
+                if isinstance(identifier, str) and identifier.startswith('r3d'):
+                    re3data_id = identifier
+                    break
+            if re3data_id:
+                re3data_meta = re3data_harvester.harvest_by_id(re3data_id)
+            # Fallback: Try bridging by name if no ID found
+            elif fairsharing_meta.get('title'):
+                self.logger.info(f"Bridging to re3data by name: {fairsharing_meta.get('title')}")
+                re3data_meta = re3data_harvester.harvest_by_name(fairsharing_meta.get('title'))
+
+        # 4. Merge all collected metadata
+        self.merge_metadata(re3data_meta, 're3data')
         self.merge_metadata(fairsharing_meta, 'fairsharing')
 
         self.logger.info("--- Finished Registry Harvesting ---")
@@ -135,16 +178,62 @@ class RepositoryHarvester:
         except Exception as e:
             self.logger.error(f"An error occurred during self-hosted harvest: {e}")
 
+    def count_triples(self,obj):
+        if not isinstance(obj, dict):
+            return 0
+        count = 0
+        for key, val in obj.items():
+            if key in ['@context', '@id']:
+                continue
+            if isinstance(val, list):
+                count += len(val)
+                count += sum(self.count_triples(v) for v in val if isinstance(v, dict))
+            elif isinstance(val, dict):
+                count += 1 + self.count_triples(val)
+            else:
+                count += 1
+        return count
+
+    def _count_triples(self,d):
+        n = 0
+        for k, v in d.items():
+            if k == "@context":
+                continue  # context does not produce triples
+
+            # Count rdf:type triples
+            if k == "@type":
+                n += len(v) if isinstance(v, list) else 1
+                continue
+
+            # If value is a dict → one triple to link + recurse inside
+            if isinstance(v, dict):
+                n += 1  # subject → predicate → object (link)
+                n += self._count_triples(v)  # recurse inside
+
+            # If value is a list → one triple per element + recurse if element is dict
+            elif isinstance(v, list):
+                for item in v:
+                    n += 1  # subject → predicate → object
+                    if isinstance(item, dict):
+                        n += self._count_triples(item)
+
+            # Literal → one triple
+            else:
+                n += 1
+        return n
+
     def export(self, save=False):
         """
         Exports harvested metadata to DCAT JSON-LD.
         It uses the MetadataHelper export method which is based on JMESPATH see: JMESPATHQueries.py
-        Some additional metadata is added here to the resulting dict
+        Some additional metadata is added here to the resulting
+
+        :param save bool , indicates if the record shall be saved or not (in FUSEKI).
         """
         self.logger.info("--- Starting Export ---")
         final_records = []
         if not self.metadata:
-            print("No metadata was harvested, nothing to export.")
+            self.logger.warning("No metadata was harvested, nothing to export.")
             return final_records
 
         for m in self.metadata:
@@ -158,6 +247,7 @@ class RepositoryHarvester:
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
 
             export_record = self.metadata_helper.export(metadata_chunk)
+            counted_triples = self._count_triples(export_record)
             primary_source = export_record.get('prov:hadPrimarySource')
             #this would ignore feed metadata etc which have no repo info per se
             if primary_source:
@@ -178,11 +268,15 @@ class RepositoryHarvester:
 
                 final_records.append(export_record)
                 self.logger.info(f"Successfully processed record from source: {source}")
+                ######################## saving to FUSEKI #######################
                 if save:
-                    self.save(graph_id, json.dumps(export_record))
+                    saved_triples = self.save(graph_id, json.dumps(export_record))
+                    print(saved_triples, counted_triples, self.count_triples(export_record))
+
+                    if saved_triples < counted_triples:
+                        self.logger.warning(f"Fuseki import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
             else:
                  self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
-                #print(f"Skipping export for source '{source}': No meaningful data to map.")
 
         self.logger.info("--- Finished Export ---")
         return final_records
@@ -192,10 +286,11 @@ class RepositoryHarvester:
         Saves a named graph in a JENA FUSEKI triple store
         :param graph_uri:
         :param graph_jsonld:
-        :return:
+        :return: int, number of saved triples
         """
         #TODO: HTTP Basic Auth
         #TODO: check if server is running etc..
+        count = 0
         try:
             headers = {
                 "Content-Type": "application/ld+json"
@@ -209,6 +304,7 @@ class RepositoryHarvester:
                 headers=headers
             )
             print("Status:", response.status_code)
-            print(response.text)
+            count = response.json().get('count')
         except Exception as e:
             self.logger.error(f"An error occurred while saving graph: {e}")
+        return count

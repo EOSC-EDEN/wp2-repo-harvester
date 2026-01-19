@@ -61,7 +61,7 @@ language: inLanguage || language || null,
 access_terms: accessRights || conditionsOfAccess || ((isAccessibleForFree || free) == `true` && 'unrestricted' || (isAccessibleForFree || free) == `false` && 'restricted' || null),
 contact: contactPoint || null,
 subject: [subjects, keyword, theme][],
-license: license."@id" || license.id || license.name || license || null 
+license: license.url ||license."@id" || license.id || license.name || license || null 
 }
 '''
 # a jmespath query to retrieve service info

@@ -1,12 +1,14 @@
 import json
 import logging
+import urllib
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
 import re
 from pathlib import Path
-from lxml import etree
+from lxml import etree, html
 
 import rdflib
 from jsonschema.exceptions import ValidationError
@@ -43,6 +45,8 @@ class MetadataHelper:
         self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
         self.catalog_url = catalog_url
         self.catalog_html = catalog_html
+        if isinstance(self.catalog_html, str):
+            self.catalog_html = self.catalog_html.encode("utf-8")
         self.catalog_header = catalog_header
         self.signposting_helper = SignPostingHelper(self.catalog_url, self.catalog_html, self.catalog_header)
 
@@ -271,10 +275,12 @@ class MetadataHelper:
 
     def get_embedded_jsonld_metadata(self,  mode = 'rdflib'):
         metadata = {}
-        if not isinstance(self.catalog_html, str): return metadata
+        if not isinstance(self.catalog_html, bytes): return metadata
         try:
-            doc = lxml_html.fromstring(self.catalog_html)
+            parser = html.HTMLParser(encoding='utf-8')
+            doc = html.fromstring(self.catalog_html, parser=parser)
             scripts = doc.xpath('//script[@type="application/ld+json"]/text()')
+            #<script type="application/ld+json">
             for script_content in scripts:
                 if not script_content.strip(): continue
                 try:
@@ -284,7 +290,9 @@ class MetadataHelper:
                     else:
                         extracted = self.get_jsonld_metadata_simple(script_content)
                     metadata.update(extracted)
-                except json.JSONDecodeError: continue
+                except json.JSONDecodeError as je:
+                    self.logger.error("Embedded JSON-LD decode Error:" + str(je))
+                    continue
         except Exception as e:
             self.logger.error("Loading embedded JSON-LD Error:"+str(e))
             #print(f"Loading embedded JSON-LD Error: {e}")
@@ -386,6 +394,8 @@ class MetadataHelper:
             for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
                 service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
                 if service_res.get('endpoint_uri'):
+                    #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
+                    service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&")
                     if service_res.get('type') == 'SearchAction':
                         service_res['output_format'] = 'text/html'
                         service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
