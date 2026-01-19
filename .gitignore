@@ -28,3 +28,7 @@ Thumbs.db
 
 # Local credentials
 repo_harvester_server/helper/fairsharing_credentials.json
+
+# Apache Jena Fuseki (if accidentally downloaded here)
+apache-jena-fuseki-*/
+*.tar.gz
