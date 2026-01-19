@@ -116,12 +116,17 @@ cd apache-jena-fuseki-5.6.0
 ```bash
 # From the Fuseki directory (e.g., ~/tools/apache-jena-fuseki-5.6.0)
 
+# Create data directory for persistent storage
+mkdir -p ./data
+
 # Start with an in-memory dataset (data lost on restart)
-./fuseki-server --mem /service_registry_store
+./fuseki-server --update --mem /service_registry_store
 
 # Or for persistent storage (recommended)
-./fuseki-server --tdb2 --loc=./data /service_registry_store
+./fuseki-server --update --tdb2 --loc=./data /service_registry_store
 ```
+
+**Note:** The `--update` flag is required to enable the Graph Store Protocol for writing data.
 
 Fuseki will start on `http://localhost:3030`:
 - Admin UI: http://localhost:3030/
