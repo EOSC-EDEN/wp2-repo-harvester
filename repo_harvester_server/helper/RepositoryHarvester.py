@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
-from repo_harvester_server.helper.Validator import EndpointValidator
+from repo_harvester_server.helper.Validator import ServiceValidator
 
 from repo_harvester_server.config import FUSEKI_PATH
 
@@ -41,7 +41,7 @@ class RepositoryHarvester:
         self.metadata = []
         self.metadata_helper = None
         self.catalog_ids = [self.catalog_url]
-        self.validator = EndpointValidator()
+        self.validator = ServiceValidator()
 
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)

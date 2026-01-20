@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import os
 import csv
 
-class EndpointValidator:
+class ServiceValidator:
     def __init__(self, timeout=10):
         self.timeout = timeout
         self.headers = {
@@ -55,6 +55,7 @@ class EndpointValidator:
         Handles validation using the extracted default queries.
         """
         suffix = config['suffix']
+        expected_mime = config['accept']
         
         # Replace placeholder if present
         if suffix and '{endpointURI}' in suffix:
@@ -76,14 +77,14 @@ class EndpointValidator:
 
         # Prepare headers
         req_headers = self.headers.copy()
-        if config.get('accept'):
-            req_headers['Accept'] = config['accept']
+        if expected_mime:
+            req_headers['Accept'] = expected_mime
 
         try:
             response = requests.get(target_url, headers=req_headers, timeout=self.timeout)
             
             # Special handling for SPARQL (400 is often a success signal for missing query)
-            if 'SPARQL' in (config.get('accept') or '') and response.status_code == 400:
+            if 'SPARQL' in (expected_mime or '') and response.status_code == 400:
                 return {
                     "valid": True, 
                     "status_code": 400, 
@@ -92,12 +93,44 @@ class EndpointValidator:
                 }
 
             is_valid = 200 <= response.status_code < 400
-            return {
+            
+            # Content-Type Validation
+            received_mime = response.headers.get('Content-Type', '').lower()
+            mime_warning = None
+            
+            if is_valid and expected_mime:
+                # Simple check: is the expected MIME type part of the received header?
+                # e.g. expected="text/xml", received="text/xml; charset=utf-8" -> Match
+                # We split expected_mime by ',' to handle multiple accepted types if present
+                accepted_types = [t.strip().lower() for t in expected_mime.split(',')]
+                
+                match_found = False
+                for t in accepted_types:
+                    if t in received_mime:
+                        match_found = True
+                        break
+                
+                if not match_found:
+                    # We downgrade validity or just add a warning?
+                    # Strict validation: Mark as invalid
+                    is_valid = False
+                    mime_warning = f"Invalid Content-Type: expected '{expected_mime}', got '{received_mime}'"
+
+            result = {
                 "valid": is_valid,
                 "status_code": response.status_code,
-                "content_type": response.headers.get('Content-Type', 'unknown'),
+                "content_type": received_mime,
                 "url": target_url
             }
+            
+            if expected_mime:
+                result["expected_content_type"] = expected_mime
+            
+            if mime_warning:
+                result["error"] = mime_warning
+                
+            return result
+
         except requests.RequestException as e:
             return {"valid": False, "error": str(e), "url": target_url}
 
