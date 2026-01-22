@@ -1,10 +1,19 @@
 import requests
 import ftplib
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import os
 import csv
+from lxml import html
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 
 class ServiceValidator:
+    logger = logging.getLogger('ServiceValidator')
+
     def __init__(self, timeout=10):
         self.timeout = timeout
         self.headers = {
@@ -28,10 +37,10 @@ class ServiceValidator:
                             'accept': row['accept'] if row['accept'] else '' # Ensure it's a string
                         }
         except FileNotFoundError:
-            print(f"Warning: Service mapping file not found at {csv_path}")
+            self.logger.warning(f"Warning: Service mapping file not found at {csv_path}")
         return mappings
 
-    def validate_url(self, url, api_type):
+    def validate_url(self, url, api_type, is_recovery_attempt=False):
         if not url:
             return {"valid": False, "error": "Empty URL"}
 
@@ -45,12 +54,12 @@ class ServiceValidator:
         config = self.protocol_configs.get(api_type)
 
         if config:
-            return self._check_specific_http(url, config)
+            return self._check_specific_http(url, config, api_type, is_recovery_attempt)
         else:
             # Fallback for types not in the specific list
             return self._check_generic_http(url)
 
-    def _check_specific_http(self, url, config):
+    def _check_specific_http(self, url, config, api_type, is_recovery_attempt):
         """
         Handles validation using the extracted default queries.
         """
@@ -97,11 +106,9 @@ class ServiceValidator:
             # Content-Type Validation
             received_mime = response.headers.get('Content-Type', '').lower()
             mime_warning = None
+            match_found = True # Assume it matches unless we check and it doesn't
             
             if is_valid and expected_mime:
-                # Simple check: is the expected MIME type part of the received header?
-                # e.g. expected="text/xml", received="text/xml; charset=utf-8" -> Match
-                # We split expected_mime by ',' to handle multiple accepted types if present
                 accepted_types = [t.strip().lower() for t in expected_mime.split(',')]
                 
                 match_found = False
@@ -111,20 +118,81 @@ class ServiceValidator:
                         break
                 
                 if not match_found:
-                    # We downgrade validity or just add a warning?
+                    # --- Smart Recovery Logic ---
+                    # If we expected JSON but got HTML, and this is not already a recovery attempt
+                    if 'application/json' in expected_mime and 'text/html' in received_mime and not is_recovery_attempt:
+                        self.logger.info(f"Attempting smart recovery for {url}: Expected JSON, got HTML.")
+                        try:
+                            # Debug: Log a snippet of the HTML
+                            self.logger.info(f"HTML Snippet (first 500 chars): {response.text[:500]}")
+                            
+                            doc = html.fromstring(response.text)
+                            
+                            # Debug: Log ALL links found
+                            all_links = doc.xpath('//a/@href')
+                            self.logger.info(f"All links found on page: {all_links}")
+
+                            # Look for links ending in .json
+                            json_links = doc.xpath('//a[contains(@href, ".json")]/@href')
+                            self.logger.info(f"Found potential JSON links: {json_links}")
+                            
+                            if json_links:
+                                recovery_url = urljoin(response.url, json_links[0])
+                                self.logger.info(f"Attempting to validate recovery URL: {recovery_url}")
+                                recovery_result = self.validate_url(recovery_url, api_type, is_recovery_attempt=True)
+                                if recovery_result.get('valid'):
+                                    recovery_result['note'] = f"Recovered from HTML page; original URL was {url}"
+                                    self.logger.info(f"Smart recovery SUCCESS for {url} via {recovery_url}")
+                                    return recovery_result
+                                else:
+                                    self.logger.warning(f"Smart recovery FAILED for {url} via {recovery_url}: {recovery_result.get('error', 'Unknown error')}")
+                            else:
+                                self.logger.info(f"No JSON links found on HTML page for {url}.")
+                                
+                                # --- Fallback for Swagger UI / SPA ---
+                                # This isnt perfect, but should catch a number of cases JavaScript rendered content,
+                                # where we don't get the full html in the response
+                                # like e.g.: "https://coscine.rwth-aachen.de/coscine/api/swagger/index.html"
+                                # Alternative would be a headless browser, but that seems a but heavy
+                                if 'swagger-ui' in response.text or 'id="swagger-ui"' in response.text:
+                                    self.logger.info(f"Detected Swagger UI on {url}. Marking as valid (content unverified).")
+                                    return {
+                                        "valid": True,
+                                        "status_code": response.status_code,
+                                        "content_type": received_mime,
+                                        "url": target_url,
+                                        "expected_content_type": expected_mime,
+                                        "note": "Received HTML (likely JavaScript-rendered Swagger UI) instead of JSON. Status 200 OK suggests service is active. Arguably not a machine readable endpoint."
+                                    }
+
+                        except Exception as e:
+                            self.logger.error(f"Error during smart recovery for {url}: {e}")
+                            pass # If parsing or recovery fails, just proceed to the normal error
+
                     # Strict validation: Mark as invalid
                     is_valid = False
                     mime_warning = f"Invalid Content-Type: expected '{expected_mime}', got '{received_mime}'"
+
+            # Check for redirects
+            redirect_chain = []
+            if response.history:
+                for resp in response.history:
+                    redirect_chain.append({
+                        "status_code": resp.status_code,
+                        "url": resp.url
+                    })
 
             result = {
                 "valid": is_valid,
                 "status_code": response.status_code,
                 "content_type": received_mime,
-                "url": target_url
+                "url": target_url,
+                "expected_content_type": expected_mime if expected_mime else None
             }
             
-            if expected_mime:
-                result["expected_content_type"] = expected_mime
+            if redirect_chain:
+                result["redirects"] = redirect_chain
+                result["final_url"] = response.url
             
             if mime_warning:
                 result["error"] = mime_warning
@@ -140,11 +208,29 @@ class ServiceValidator:
         """
         try:
             response = requests.get(url, headers=self.headers, timeout=self.timeout)
-            return {
+            
+            # Check for redirects
+            redirect_chain = []
+            if response.history:
+                for resp in response.history:
+                    redirect_chain.append({
+                        "status_code": resp.status_code,
+                        "url": resp.url
+                    })
+            
+            result = {
                 "valid": 200 <= response.status_code < 400,
                 "status_code": response.status_code,
+                "content_type": response.headers.get('Content-Type', 'unknown').lower(),
                 "url": url
             }
+            
+            if redirect_chain:
+                result["redirects"] = redirect_chain
+                result["final_url"] = response.url
+                
+            return result
+
         except requests.RequestException as e:
             return {"valid": False, "error": str(e), "url": url}
 
