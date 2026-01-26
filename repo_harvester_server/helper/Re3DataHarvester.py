@@ -1,3 +1,5 @@
+import json
+
 import requests
 from urllib.parse import urlparse
 from lxml import etree
@@ -200,7 +202,12 @@ class Re3DataHarvester:
             inst_name = find_text(inst_element, 'r3d:institutionName')
             if inst_name:
                 publishers.append({"type": "org:Organization", "name": inst_name})
-
+        contact = {}
+        for contact_elem in repo_root.findall(".//r3d:repositoryContact", self.ns):
+            if '@' in contact_elem.text:
+                contact['email'] = contact_elem.text
+            elif 'http' in contact_elem.text:
+                contact['url'] = contact_elem.text
         # --- Service Extraction (Handles Multiple) ---
         services = []
         for api_elem in repo_root.findall(".//r3d:api", self.ns):
@@ -230,15 +237,16 @@ class Re3DataHarvester:
             find_text(repo_root, ".//r3d:repositoryURL")
         ] + find_all_text(repo_root, ".//r3d:repositoryIdentifier")
 
+
         metadata = {
             'title': find_text(repo_root, ".//r3d:repositoryName"),
             'description': find_text(repo_root, ".//r3d:description"),
             'identifier': [i for i in identifiers if i],
             'publisher': publishers if publishers else None,
-            'contact': find_all_text(repo_root, ".//r3d:repositoryContact"),
+            'contact' : contact,
+            #'contact': find_all_text(repo_root, ".//r3d:repositoryContact"),
             'services': services if services else None,
             'keywords': find_all_text(repo_root, ".//r3d:keyword"),
             'subject': find_all_text(repo_root, ".//r3d:subject")
         }
-
         return {k: v for k, v in metadata.items() if v}
