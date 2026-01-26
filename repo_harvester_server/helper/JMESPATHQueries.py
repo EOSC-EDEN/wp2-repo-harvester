@@ -31,7 +31,13 @@ DCAT_EXPORT_QUERY = '''
   },
   "dct:description": description,
   "dct:language": language,
-  "dct:contactPoint": contact,
+  "dct:contactPoint": (contact||contact[0]).{
+    "@type": 'vcard:Kind',
+    "vcard:fn": fn || null,
+    "vcard:hasEmail": hasEmail || email || (contains(@, '@') && @) || null,
+    "vcard:telephone": telephone || null,
+    "vcard:url": url || (contains(@, 'http') && @) || null
+    },
   "dct:license": license || null,
   "dcat:keyword": [subject, keywords, theme][],
   "dcat:service": services[].{
