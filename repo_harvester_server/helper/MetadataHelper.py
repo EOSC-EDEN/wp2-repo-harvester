@@ -425,6 +425,7 @@ class MetadataHelper:
             print(e.message)
 
     def export(self, metadata):
+        # creates DCAT JSON-LD
         def clean_none(obj):
             if isinstance(obj, dict):
                 return {
