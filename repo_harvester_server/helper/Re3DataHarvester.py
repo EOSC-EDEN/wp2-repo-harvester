@@ -1,4 +1,5 @@
 import json
+import re
 
 import requests
 from urllib.parse import urlparse
@@ -6,6 +7,8 @@ from lxml import etree
 import os
 import csv
 import logging
+from repo_harvester_server.data.country_codes import country_codes_3
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -200,8 +203,12 @@ class Re3DataHarvester:
         publishers = []
         for inst_element in repo_root.findall(".//r3d:institution", self.ns):
             inst_name = find_text(inst_element, 'r3d:institutionName')
+            inst_country = find_text(inst_element, 'r3d:institutionCountry')
+            if re.match(r'^[A-Z]{3}$', str(inst_country)):
+                if inst_country in country_codes_3:
+                    inst_country = country_codes_3[inst_country]
             if inst_name:
-                publishers.append({"type": "org:Organization", "name": inst_name})
+                publishers.append({"type": "org:Organization", "name": inst_name, "country": inst_country})
         contact = {}
         for contact_elem in repo_root.findall(".//r3d:repositoryContact", self.ns):
             if '@' in contact_elem.text:
