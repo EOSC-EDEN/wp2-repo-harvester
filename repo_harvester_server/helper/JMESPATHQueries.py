@@ -24,20 +24,19 @@ DCAT_EXPORT_QUERY = '''
   "@type": ['dcat:Catalog', 'foaf:Project'],
   "dct:title": title,
   "dct:identifier": identifier,
-  "dct:publisher": publisher[].{
-    "@type": 'foaf:Agent',
-    "foaf:name" : name,
-    "vcard:country": country      
+  "dct:publisher": ([publisher] || publisher[])[].{
+  "@type": 'foaf:Agent', 
+  "foaf:name":name,
+  "vcard:country":country||address.addressCountry
   },
   "dct:description": description,
   "dct:language": language,
   "dct:contactPoint": (contact||contact[0]).{
-    "@type": 'vcard:Kind',
-    "vcard:fn": fn || null,
-    "vcard:hasEmail": hasEmail || email || (contains(@, '@') && @) || null,
-    "vcard:telephone": telephone || null,
-    "vcard:url": url || (contains(@, 'http') && @) || null
-    },
+      "@type": 'vcard:Kind',
+      "vcard:telephone": telephone || null,"vcard:fn": fn || null,
+      "vcard:hasEmail": hasEmail || email || (contains(to_string(@), '@') && @) || null, 
+      "vcard:url": url || (contains(to_string(@), 'http') && @) || null
+  },
   "dct:license": license || null,
   "dcat:keyword": [subject, keywords, theme][],
   "dcat:service": services[].{
