@@ -426,6 +426,7 @@ class MetadataHelper:
 
     def export(self, metadata):
         # creates DCAT JSON-LD
+        dcat ={}
         def clean_none(obj):
             if isinstance(obj, dict):
                 return {
@@ -437,7 +438,9 @@ class MetadataHelper:
                 return [clean_none(item) for item in obj if item is not None]
             else:
                 return obj
+        try:
+            dcat = jmespath.search(expression=DCAT_EXPORT_QUERY, data=metadata)
+        except Exception as e:
+            print(e)
 
-        return clean_none(
-            jmespath.search(expression=DCAT_EXPORT_QUERY, data=metadata)
-        )
+        return clean_none(dcat)
