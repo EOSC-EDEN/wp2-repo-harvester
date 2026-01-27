@@ -42,7 +42,7 @@ class MetadataHelper:
         # Get the directory where the current script is located
         helper_dir = os.path.dirname(os.path.abspath(__file__))
         # Construct the absolute path to the xslt file
-        self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
+        #self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
         self.catalog_url = catalog_url
         self.catalog_html = catalog_html
         if isinstance(self.catalog_html, str):
@@ -425,6 +425,8 @@ class MetadataHelper:
             print(e.message)
 
     def export(self, metadata):
+        # creates DCAT JSON-LD
+        dcat ={}
         def clean_none(obj):
             if isinstance(obj, dict):
                 return {
@@ -436,7 +438,9 @@ class MetadataHelper:
                 return [clean_none(item) for item in obj if item is not None]
             else:
                 return obj
+        try:
+            dcat = jmespath.search(expression=DCAT_EXPORT_QUERY, data=metadata)
+        except Exception as e:
+            print(e)
 
-        return clean_none(
-            jmespath.search(expression=DCAT_EXPORT_QUERY, data=metadata)
-        )
+        return clean_none(dcat)

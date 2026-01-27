@@ -2,13 +2,11 @@ import json
 from datetime import datetime
 import requests
 import logging
-import re
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
 
-from urllib.parse import urlparse
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester

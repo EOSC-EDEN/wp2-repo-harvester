@@ -183,6 +183,10 @@ class JSONGraph:
             memo[node_id] = expanded
 
         for key, value in node.items():
+            if key in ['url']: #don't expand url properties these are not @id references
+                expanded[key] = value
+                continue
+
             if isinstance(value, str):
                 if value in self.nodes and value != node_id:
                     expanded[key] = self.expandNode(
