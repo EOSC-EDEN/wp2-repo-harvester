@@ -1,8 +1,11 @@
 import os
 import json
+
+import jmespath
 import requests
 from urllib.parse import urlparse
 import logging
+from repo_harvester_server.helper.JMESPATHQueries import FAIRSHARING_QUERY
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -250,14 +253,19 @@ class FAIRsharingHarvester:
             return None
 
         attributes = best_record.get('attributes', {})
-        metadata_nested = attributes.get('metadata', {})
-        
-        metadata = {
+        #metadata_nested = attributes.get('metadata', {})
+        try:
+            metadata = jmespath.search(FAIRSHARING_QUERY, best_record)
+            print(json.dumps(metadata, indent=2))
+        except Exception as e:
+            self.logger.warning(f"Error parsing FAIRsharing search results with JMESPATH : {e}")
+
+        '''metadata = {
             'fairsharingID': best_record.get('id'),
             'title': metadata_nested.get('name'),
             'description': metadata_nested.get('description'),
             'landingPage': metadata_nested.get('homepage'),
             'identifier': [metadata_nested.get('doi')] if metadata_nested.get('doi') else None
-        }
+        }'''
         
         return {k: v for k, v in metadata.items() if v}

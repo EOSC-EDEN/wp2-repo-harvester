@@ -47,9 +47,9 @@ DCAT_EXPORT_QUERY = '''
       "dct:title": title,
       "dct:format": output_format
   },
-  "dct:conformsTo": policies[].{
-  "@id": policy_uri,
-  "@type": 'dct:Policy',
+  "dct:conformsTo": policies[?policy_uri].{
+  "@idss": policy_uri,
+  "@type": ['dct:Policy', type]
   "dct:title": title
   }
 }}
@@ -68,6 +68,7 @@ subject: [subjects, keyword, theme][],
 license: license.url ||license."@id" || license.id || license.name || license || null 
 }
 '''
+
 # a jmespath query to retrieve service info
 SERVICE_INFO_QUERY  = '''{
 endpoint_uri : url || target || endpointURL || landingPage || null,
@@ -82,3 +83,22 @@ policy_uri:  url || "@id",
 type : ["@type", additionalType][],
 title: title || name || null
 }'''
+
+FAIRSHARING_QUERY ='''
+{
+    title: attributes.metadata.name || null,
+    identifier: [attributes.metadata.doi, attributes.metadata.cross_references[?portal=='re3data'].url][] || null,
+    resource_type:  attributes.record_type || null,
+    publisher:  [attributes.organisation_links[?relation=='maintains'][].{name: organisation_name} , attributes.grants[?relation=='maintains'][].{name: saved_state.name} ][] || null,
+    description: attributes.metadata.description || null,
+    access_terms: attributes.metadata.data_access_condition.type|| null,
+    contact : attributes.metadata.contacts[].{mail: contact_email},
+    subject: attributes.subjects[],
+    license: attributes.licence_links[?relation!='undefined'].licence_url || null ,
+    policies: [
+        attributes.metadata.data_preservation_policy.{type: 'premis:PreservationPolicy', policy_uri:url, title: name},
+        attributes.metadata.data_deposition_condition.{type: 'ex:DepositionPolicy', policy_uri:url, title: name},
+        attributes.metadata.resource_sustainability.{type: 'ex:SustainabilityPolicy', policy_uri:url, title:name}
+    ]
+}
+'''
