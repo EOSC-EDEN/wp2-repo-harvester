@@ -198,6 +198,7 @@ class Re3DataHarvester:
         # General purpose helper for multi-value text fields
         def find_all_text(element, path):
             return [node.text.strip() for node in element.findall(path, self.ns) if node.text]
+        #TODO: license missing!!
 
         # --- Publisher / Institution Extraction (Handles Multiple) ---
         publishers = []
