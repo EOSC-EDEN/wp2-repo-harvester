@@ -25,6 +25,13 @@ source venv/bin/activate
 
 # Install Dependencies  
 pip install -r requirements.txt
+
+# Set the necessary OS env variables: 
+* FUSEKI_USERNAME
+* FUSEKI_PASSWORD
+* FAIRSHARING_USERNAME
+* FAIRSHARING_PASSWORD
+
 ```
 
 ### 2. Run the Harvester Server
