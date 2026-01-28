@@ -113,8 +113,7 @@ class SignPostingHelper:
     def parse_link_string(self, link_str):
         links = []
         if isinstance(link_str, str):
-            if 1==1:
-            #try:
+            try:
                 for preparsed_link in link_str.split(","):
                     found_type, type_match, anchor_match = None, None, None
                     found_rel, rel_match = None, None
@@ -135,8 +134,8 @@ class SignPostingHelper:
                         link_dict['anchor'] = self.url
 
                     links.append(link_dict)
-            #except Exception as e:
-                #print('Link detection in Link String Error: ', e, link_str)
+            except Exception as e:
+                print('Link detection in Link String Error: ', e, link_str)
         return links
 
     def set_header_links(self):

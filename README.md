@@ -7,6 +7,18 @@ Collects, aggregates, and normalizes metadata from scientific repositories (re3d
 ```bash
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+
+# Set the necessary OS env variables: 
+* FUSEKI_USERNAME
+* FUSEKI_PASSWORD
+* FAIRSHARING_USERNAME
+* FAIRSHARING_PASSWORD
+
+```
+
+### 2. Run the Harvester Server
+
+```bash
 python main.py
 ```
 
