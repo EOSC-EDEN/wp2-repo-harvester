@@ -21,6 +21,7 @@ The EDEN WP2 Repository Harvester is a web service that collects, aggregates, an
 ## Server & Runtime
 
 ### API Server
+
 - Framework: Connexion (Flask-based RESTful API framework)
 - ASGI Server: Uvicorn
 - Port: 8080 (development)
@@ -28,34 +29,17 @@ The EDEN WP2 Repository Harvester is a web service that collects, aggregates, an
 - Swagger UI: `http://localhost:8080/ui`
 
 ### Triple Store (Optional)
+
 - Database: Apache Jena Fuseki 5.6.0
 - Port: 3030
 - Storage: TDB2 with named graphs per repository
 - Protocol: Graph Store Protocol for SPARQL/RDF persistence
 
 ### Runtime Requirements
+
 - Python 3.9+
 - Virtual environment (venv)
 - Network access to external APIs
-
----
-
-## Libraries & Dependencies
-
-### Core Dependencies
-
-| Library                             | Version  | Purpose                                     |
-| ----------------------------------- | -------- | ------------------------------------------- |
-| connexion[uvicorn,flask,swagger-ui] | -        | RESTful API framework with OpenAPI support  |
-| rdflib                              | 7.5.0    | RDF/OWL parsing and JSON-LD manipulation    |
-| lxml                                | 6.0.2    | XML/HTML parsing and XSLT transformations   |
-| requests                            | >=2.30.0 | HTTP client for fetching web resources      |
-| jmespath                            | -        | JSON query language for metadata extraction |
-| python-dateutil                     | -        | Date/time parsing utilities                 |
-| six                                 | -        | Python 2/3 compatibility                    |
-
-### Standard Library Modules
-- `logging`, `json`, `datetime`, `csv`, `argparse`, `urllib`, `pathlib`, `uuid`, `copy`
 
 ---
 
@@ -155,53 +139,10 @@ The system recognizes 50+ service protocols defined in `services_default_queries
 
 ---
 
-## Project Structure
-
-```
-wp2-repo-harvester/
-├── main.py                              # API server entry point
-├── harvest_all.py                       # Batch harvesting script
-├── requirements.txt                     # Python dependencies
-├── README.md                            # Project documentation
-│
-├── repo_harvester_server/
-│   ├── config.py                        # Fuseki endpoint configuration
-│   ├── controllers/
-│   │   └── get_repo_info_controller.py  # Main API handler
-│   ├── models/
-│   │   └── repository_info.py           # Data model classes
-│   ├── helper/
-│   │   ├── RepositoryHarvester.py       # Main orchestrator
-│   │   ├── MetadataHelper.py            # Self-hosted extraction
-│   │   ├── Re3DataHarvester.py          # re3data.org integration
-│   │   ├── FAIRsharingHarvester.py      # FAIRsharing.org client
-│   │   ├── SignPostingHelper.py         # Signposting/Linkset parsing
-│   │   ├── GraphHelper.py               # JSON-LD normalization
-│   │   └── JMESPATHQueries.py           # Metadata queries
-│   ├── data/
-│   │   └── country_codes.py             # ISO 3166 mapping
-│   ├── swagger/
-│   │   └── swagger.yaml                 # OpenAPI 3.0.4 spec
-│   ├── xslt/
-│   │   ├── metatag2json.xslt            # Meta tags to JSON
-│   │   └── rdf2json.xslt                # RDF to JSON
-│   ├── SG4 FIDELIS repos.csv            # Repository list (40+)
-│   └── services_default_queries.csv     # Protocol definitions
-│
-├── schema/
-│   ├── context.jsonld                   # JSON-LD context
-│   ├── repo_schema.json                 # Validation schema
-│   └── examples/
-│       └── full_registry_graph.json     # Example output
-│
-└── output/                              # Harvested results
-```
-
----
-
 ## Architectural Components
 
 ### RepositoryHarvester (Orchestrator)
+
 Main entry point managing the cascading fallback strategy:
 1. Self-hosted metadata extraction
 2. Registry-based harvesting (re3data, FAIRsharing)
