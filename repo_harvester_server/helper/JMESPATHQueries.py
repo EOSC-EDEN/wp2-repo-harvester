@@ -1,6 +1,6 @@
 # a jmespath query to retrieve all basic info from a repo JSON-LD
 # which previously was harmonised / simplified by the GraphHelper
-
+# the resulting DICT/JSON is a DCAT JSON-LD
 DCAT_EXPORT_QUERY = '''
 {
   "@context": {
@@ -48,8 +48,8 @@ DCAT_EXPORT_QUERY = '''
       "dct:format": output_format
   },
   "dct:conformsTo": policies[?policy_uri].{
-  "@idss": policy_uri,
-  "@type": ['dct:Policy', type]
+  "@id": policy_uri,
+  "@type": ['dct:Policy', type][]
   "dct:title": title
   }
 }}
@@ -69,21 +69,23 @@ license: license.url ||license."@id" || license.id || license.name || license ||
 }
 '''
 
-# a jmespath query to retrieve service info
+# a jmespath query to retrieve service info in graphs containing WebAPI, Service or similar objects
 SERVICE_INFO_QUERY  = '''{
-endpoint_uri : url || target || endpointURL || landingPage || null,
+endpoint_uri : url || target.urlTemplate || target.url || target || endpointURL || landingPage || null,
 type : "@type",
 title : title || name || null,
 output_format: serviceOutput.identifier || mediaType || null,
 conforms_to: documentation || conformsTo
 }'''
 
+# a jmespath to identify policies in graphs containing Policy objects
 POLICY_INFO_QUERY = '''{
 policy_uri:  url || "@id",
 type : ["@type", additionalType][],
 title: title || name || null
 }'''
 
+# a jmespath query to parse metadata delivered by the FAIRsharing API
 FAIRSHARING_QUERY ='''
 {
     title: attributes.metadata.name || null,
