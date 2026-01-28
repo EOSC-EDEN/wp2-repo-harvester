@@ -1,7 +1,12 @@
 import json
+import os
 from datetime import datetime
 import requests
+from requests.auth import HTTPBasicAuth
 import logging
+
+from rdflib import Graph
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -39,6 +44,8 @@ class RepositoryHarvester:
         self.metadata_helper = None
         self.catalog_ids = [self.catalog_url]
 
+        self.check_environment_variables()
+
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)
 
@@ -62,6 +69,26 @@ class RepositoryHarvester:
             self.logger.info('Catalog URL harvested: '+ self.catalog_url)
         except requests.exceptions.RequestException as e:
             self.logger.error("Failed to fetch URI: %s", self.catalog_url)
+
+    def check_environment_variables(self):
+        # to sucessfully perform the harvesting we need the FAIRsharing credentials as ENV variables
+        # to be able to store the harvested metadata in FUSEKI we need FUSEKI credentials as ENV variables
+        all_variables_available = True
+        if not os.environ.get('FAIRSHARING_USERNAME'):
+            self.logger.error("FAIRSHARING_USERNAME (OS env variable) not set – please define it before running")
+            all_variables_available = False
+        if not os.environ.get('FAIRSHARING_PASSWORD'):
+            self.logger.error("FAIRSHARING_PASSWORD (OS env variable) not set – please define it before running")
+            all_variables_available = False
+        if not os.environ.get('FUSEKI_USERNAME'):
+            self.logger.error("FUSEKI_USERNAME not set (OS env variable) not set – please define it before running")
+            all_variables_available = False
+        if not os.environ.get('FUSEKI_PASSWORD'):
+            self.logger.error("FUSEKI_PASSWORD not set (OS env variable) not set – please define it before running")
+            all_variables_available = False
+
+        return all_variables_available
+
 
     def merge_metadata(self, new_metadata, source = None):
         """
@@ -176,7 +203,7 @@ class RepositoryHarvester:
         except Exception as e:
             self.logger.error(f"An error occurred during self-hosted harvest: {e}")
 
-    def count_triples(self,obj):
+    '''def count_triples(self,obj):
         if not isinstance(obj, dict):
             return 0
         count = 0
@@ -218,7 +245,7 @@ class RepositoryHarvester:
             # Literal → one triple
             else:
                 n += 1
-        return n
+        return n'''
 
     def export(self, save=False):
         """
@@ -229,6 +256,7 @@ class RepositoryHarvester:
         :param save bool , indicates if the record shall be saved or not (in FUSEKI).
         """
         self.logger.info("--- Starting Export ---")
+
         final_records = []
         if not self.metadata:
             self.logger.warning("No metadata was harvested, nothing to export.")
@@ -245,7 +273,6 @@ class RepositoryHarvester:
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
 
             export_record = self.metadata_helper.export(metadata_chunk)
-            counted_triples = self._count_triples(export_record)
             primary_source = export_record.get('prov:hadPrimarySource')
             #this would ignore feed metadata etc which have no repo info per se
             if primary_source:
@@ -268,11 +295,16 @@ class RepositoryHarvester:
                 self.logger.info(f"Successfully processed record from source: {source}")
                 ######################## saving to FUSEKI #######################
                 if save:
-                    saved_triples = self.save(graph_id, json.dumps(export_record))
-                    print(saved_triples, counted_triples, self.count_triples(export_record))
+                    json_ld_str =json.dumps(export_record)
+                    g = Graph()
+                    g.parse(data=json_ld_str, format='json-ld')
+                    counted_triples = len(g)
 
-                    if saved_triples < counted_triples:
-                        self.logger.warning(f"Fuseki import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
+                    saved_triples = self.save(graph_id, json_ld_str)
+
+                    if saved_triples != None:
+                        if saved_triples < counted_triples:
+                            self.logger.warning(f"FUSEKI import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
             else:
                  self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
 
@@ -287,22 +319,30 @@ class RepositoryHarvester:
         :return: int, number of saved triples
         """
         #TODO: HTTP Basic Auth
-        #TODO: check if server is running etc..
-        count = 0
+        self.logger.info("Attempting to save graph in FUSEKI : "+ str(graph_uri))
+        count = None
         try:
             headers = {
                 "Content-Type": "application/ld+json"
             }
-
+            FUSEKI_USERNAME = os.environ.get('FUSEKI_USERNAME')
+            FUSEKI_PASSWORD = os.environ.get('FUSEKI_PASSWORD')
             # Use graph store protocol
             response = requests.put(
                 FUSEKI_PATH,
                 params={"graph": graph_uri},
                 data=graph_jsonld,
-                headers=headers
+                headers=headers,
+                auth=HTTPBasicAuth(FUSEKI_USERNAME, FUSEKI_PASSWORD)
             )
-            print("Status:", response.status_code)
-            count = response.json().get('count')
+            if response.status_code != 200:
+                if response.status_code == 401:
+                    self.logger.warning("RepositoryHarvester is not authorized to access FUSEKI. Please check your OS env variables: FUSEKI_USER, FUSEKI_PASSWORD.")
+                self.logger.error(f"FUSEKI error, status code: {response.status_code}")
+            else:
+                count = response.json().get('count')
+        except requests.exceptions.ConnectionError as e:
+            self.logger.error("FUSEKI server not available / connection failed: "+str(e))
         except Exception as e:
-            self.logger.error(f"An error occurred while saving graph: {e}")
+            self.logger.error(f"FUSEKI error occured while saving graph: {e}")
         return count
