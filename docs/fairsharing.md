@@ -18,17 +18,17 @@ export FAIRSHARING_PASSWORD="your_password"
 
 ## Output Example
 
-A successful FAIRsharing harvest returns normalized metadata:
+A successful FAIRsharing harvest returns normalized metadata (example format):
 
 ```json
 {
-  "title": "4TU.ResearchData",
-  "identifier": ["10.25504/FAIRsharing.zcveaz"],
+  "title": "ABC.ResearchData",
+  "identifier": ["12.34567/FAIRsharing.abcdefg"],
   "resource_type": "repository",
-  "publisher": [{"name": "4TU.ResearchData"}],
-  "description": "4TU.ResearchData is an international data repository...",
+  "publisher": [{"name": "ABC.ResearchData"}],
+  "description": "ABC.ResearchData is an international data repository...",
   "access_terms": "open",
-  "contact": [{"mail": "researchdata@4tu.nl"}],
+  "contact": [{"mail": "example@email.com"}],
   "subject": ["Engineering", "Natural Sciences"],
   "license": ["https://creativecommons.org/licenses/by/4.0/"],
   "policies": [
