@@ -14,27 +14,7 @@ export FAIRSHARING_USERNAME="your_username"
 export FAIRSHARING_PASSWORD="your_password"
 ```
 
-* At this stage, you should be able to harvest FairSharing metadata with `python harvest_all.py` 
-
-## Harvesting Strategies
-
-### By URL (Automatic)
-
-When harvesting a repository URL, the harvester attempts to find a matching FAIRsharing record:
-
-1. Hostname search - Queries FAIRsharing using the repository's hostname
-2. Name search - Falls back to searching by the first part of the hostname (e.g., `zenodo` from `zenodo.org`)
-
-The harvester matches records by comparing homepage URLs with subdomain tolerance (e.g., `about.coscine.de` matches `coscine.de`).
-
-### By DOI (Direct)
-
-When a FAIRsharing DOI is known, use `harvest_by_id()` for exact matching:
-
-```bash
-harvester = FAIRsharingHarvester()
-metadata = harvester.harvest_by_id("10.25504/FAIRsharing.zcveaz")
-```
+* At this stage, you should be able to harvest FAIRsharing metadata with `python harvest_all.py`
 
 ## Output Example
 
