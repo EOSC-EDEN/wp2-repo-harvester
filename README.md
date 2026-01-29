@@ -32,6 +32,7 @@ curl "http://localhost:8080/?url=https://pangaea.de"
 
 - [Quickstart Guide](docs/quickstart.md) — Setup, installation, harvesting
 - [Technologies](docs/technologies.md) — Stack, dependencies, data models
+- [FAIRsharing](docs/fairsharing.md) — FAIRsharing API integration and authentication
 - [Fuseki Setup](docs/fuseki.md) — Optional triple store for SPARQL queries
 
 ## Key Files
