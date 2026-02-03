@@ -247,6 +247,7 @@ class Re3DataHarvester:
 
 
         metadata = {
+            'resource_type' : 'r3d:Repository',# see: https://github.com/re3data/ontology/blob/master/r3dOntology.ttl
             'title': find_text(repo_root, ".//r3d:repositoryName"),
             'description': find_text(repo_root, ".//r3d:description"),
             'identifier': [i for i in identifiers if i],
