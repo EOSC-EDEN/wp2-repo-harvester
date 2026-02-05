@@ -20,21 +20,36 @@ class JSONGraph:
         self._stats = {'properties': 0, 'outlinks': 0, 'inlinks': 0};
 
 
-    def parse(self, jsonstr):
+    def parse(self, jsonstr, rootNodeID = None):
+        # parses a given JSON-LD string representing a graphs and returns a rebuilt new, nested JSON-LD
+        # which starts with a root node which can either be defined using rootNodeID or is alternatively
+        # determined as the 'most important' node called self.mainNode; see scoring in _setNodesInfo
         self.jsonld = json.loads(jsonstr)
-        branches = self.jsonld.get('@graph')
-
+        # basically three possibilities:
+        # 1: a simple list containing other graphs
+        # 2: a @graph list containg other graphs
+        # 3: simply one graph
+        if isinstance(self.jsonld, list):
+            branches = self.jsonld
+        else:
+            branches = self.jsonld.get('@graph')
         if not branches:
             branches = [self.jsonld]
 
-        #parse, detect individual typed nodes and rebuild graph using the main node as starting point
+            #parse, detect individual typed nodes and rebuild graph using the main node as starting point
         if isinstance(branches, list):
             for branch in branches:
                 self._setNodes(branch)
             self._setNodesInfo()
-            if self.mainNode:
-                root = self.nodes[self.mainNode]['dict']
-                #the graph is re-created so that the main node is the root node in the resulting JSON
+            if rootNodeID and self.nodes.get(rootNodeID):
+                rootNode = self.nodes[rootNodeID]
+            else:
+                rootNode = self.nodes[self.mainNode]
+            if rootNode:
+                root = rootNode['dict']
+                #print('ROOT: ', mainnode)
+                # the graph is re-created so that the main node is the root node in the resulting JSON
+                # however this may just be a subgraph, since it is just rebuilt starting at root
                 self.jsonld = self.expandNode(root)
             #print('REBUILT JSON: ', json.dumps(self.jsonld, indent=2))
 
@@ -52,11 +67,13 @@ class JSONGraph:
                     elif isinstance(value, list):
                         value = [strip_node_prefixes(v) if isinstance(v, dict) else v for v in value]
                     # Strip prefix from @type values if string or list
-                    if local_key == '@type':
+                    # this is necessary for easy node by name retrieval, see: getNodesByType
+                    # but using the _local_name it becomes deprecated...
+                    '''if local_key == '@type':
                         if isinstance(value, str):
                             value = value.split(':')[-1]
                         elif isinstance(value, list):
-                            value = [v.split(':')[-1] if isinstance(v, str) else v for v in value]
+                            value = [v.split(':')[-1] if isinstance(v, str) else v for v in value]'''
                     new_node[local_key] = value
                 return new_node
             return node
@@ -209,6 +226,11 @@ class JSONGraph:
 
         return expanded
 
+    def _local_name(self, t):
+        # Helper method to retrieve a local name (without namespace prefix)
+        if not t:
+            return None
+        return t.split('/')[-1].split(':')[-1]
 
     def getNodesByType(self, target_type, excludeMainEntity = True):
         # Normalize input: always work with a list of types
@@ -222,10 +244,17 @@ class JSONGraph:
         for node in self.nodes.values():
             types = node['dict'].get('@type')
 
-            if isinstance(types, str):
+            '''if isinstance(types, str):
                 node_types = {types}
             elif isinstance(types, list):
                 node_types = set(types)
+            else:
+                continue  # skip if no @type'''
+
+            if isinstance(types, str):
+                node_types = {self._local_name(types)}
+            elif isinstance(types, list):
+                node_types = {self._local_name(t) for t in types}
             else:
                 continue  # skip if no @type
 
