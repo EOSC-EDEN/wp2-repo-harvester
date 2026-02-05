@@ -17,6 +17,7 @@ from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
 
 from repo_harvester_server.config import FUSEKI_PATH
+from repo_harvester_server.helper.SPARQLQueries import GET_ALL_GRAPHS
 
 class RepositoryHarvester:
     logger = logging.getLogger('RepositoryHarvester')
@@ -203,50 +204,6 @@ class RepositoryHarvester:
         except Exception as e:
             self.logger.error(f"An error occurred during self-hosted harvest: {e}")
 
-    '''def count_triples(self,obj):
-        if not isinstance(obj, dict):
-            return 0
-        count = 0
-        for key, val in obj.items():
-            if key in ['@context', '@id']:
-                continue
-            if isinstance(val, list):
-                count += len(val)
-                count += sum(self.count_triples(v) for v in val if isinstance(v, dict))
-            elif isinstance(val, dict):
-                count += 1 + self.count_triples(val)
-            else:
-                count += 1
-        return count
-
-    def _count_triples(self,d):
-        n = 0
-        for k, v in d.items():
-            if k == "@context":
-                continue  # context does not produce triples
-
-            # Count rdf:type triples
-            if k == "@type":
-                n += len(v) if isinstance(v, list) else 1
-                continue
-
-            # If value is a dict → one triple to link + recurse inside
-            if isinstance(v, dict):
-                n += 1  # subject → predicate → object (link)
-                n += self._count_triples(v)  # recurse inside
-
-            # If value is a list → one triple per element + recurse if element is dict
-            elif isinstance(v, list):
-                for item in v:
-                    n += 1  # subject → predicate → object
-                    if isinstance(item, dict):
-                        n += self._count_triples(item)
-
-            # Literal → one triple
-            else:
-                n += 1
-        return n'''
-
     def export(self, save=False):
         """
         Exports harvested metadata to DCAT JSON-LD.
@@ -318,7 +275,6 @@ class RepositoryHarvester:
         :param graph_jsonld:
         :return: int, number of saved triples
         """
-        #TODO: HTTP Basic Auth
         self.logger.info("Attempting to save graph in FUSEKI : "+ str(graph_uri))
         count = None
         try:
