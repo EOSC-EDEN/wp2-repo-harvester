@@ -38,7 +38,7 @@ logging.getLogger('rdflib.term').setLevel(logging.ERROR)
 
 class MetadataHelper:
     logger = logging.getLogger('MetadataHarvester')
-    def __init__(self, catalog_url, catalog_html=None, catalog_header=None):
+    def __init__(self, catalog_url=None, catalog_html=None, catalog_header=None):
         # Get the directory where the current script is located
         helper_dir = os.path.dirname(os.path.abspath(__file__))
         # Construct the absolute path to the xslt file
@@ -82,11 +82,12 @@ class MetadataHelper:
 
     def get_html_meta_tags_metadata(self):
         metadata = {}
-        helper_dir = os.path.dirname(os.path.abspath(__file__))
-        xslt_file_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'metatag2json.xslt'))
 
-        if not isinstance(self.catalog_html, str) or not self.catalog_html: return metadata
-        try:
+        #helper_dir = os.path.dirname(os.path.abspath(__file__))
+        #xslt_file_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'metatag2json.xslt'))
+
+        if not isinstance(self.catalog_html, bytes) or not self.catalog_html: return metadata
+        '''try:
             html_parser = etree.HTMLParser()
             html_doc = etree.fromstring(self.catalog_html, parser=html_parser)
             with open(xslt_file_path, "rb") as f:
@@ -96,8 +97,9 @@ class MetadataHelper:
             result = transform(html_doc)
             metadata = json.loads(str(result))
         except Exception as e:
-            self.logger.error("Error parsing meta tags metadata: %s", e)
-        '''try:
+            self.logger.error("Error parsing meta tags metadata: %s", e)'''
+        try:
+            self.logger.info('Trying to parse meta tags metadata')
             doc = lxml_html.fromstring(self.catalog_html)
             desc = doc.xpath('//meta[@name="description"]/@content')
             if desc: metadata['description'] = desc[0].strip()
@@ -105,8 +107,21 @@ class MetadataHelper:
             if pub: metadata['publisher'] = pub[0].strip()
             tit = doc.xpath('//meta[@name="title"]/@content')
             if tit: metadata['title'] = tit[0].strip()
-        except Exception: pass'''
-        return {k: v for k, v in metadata.items() if v}
+            lan = doc.xpath('//meta[@name="language"]/@content')
+            if lan: metadata['language'] = lan[0].strip()
+            lic = doc.xpath('//meta[@name="license"]/@content')
+            if lic: metadata['license'] = lic[0].strip()
+            ctc = doc.xpath('//meta[@name="contact"]/@content')
+            if ctc: metadata['contact'] = ctc[0].strip()
+            typ = doc.xpath('//meta[@name="type"]/@content')
+            if typ: metadata['resource_type'] = typ[0].strip()
+        except Exception: pass
+        metadata =  {k: v for k, v in metadata.items() if v}
+        if not metadata.get('resource_type'):
+            metadata['resource_type'] = 'dcmitype:Text'
+        else:
+            metadata['resource_type'] = ['dcmitype:Text', str(metadata['resource_type'])]
+        return metadata
 
     def _extract_publisher(self, g, resource_node):
         # 1. Look for explicit Publisher/Provider/Creator properties
@@ -270,32 +285,47 @@ class MetadataHelper:
                 if services: metadata['services'] = services
         except Exception as e:
             self.logger.error("Error processing JSON-LD: " + str(e))
-            #print(f"Error processing JSON-LD: {e}")
         return metadata
+
+    def _strip_json_comments(self, text: str) -> str:
+        # Remove // comments
+        text = re.sub(r"/\*(?:\*(?!/)|[^*])*\*/", "", text)
+        return text
 
     def get_embedded_jsonld_metadata(self,  mode = 'rdflib'):
         metadata = {}
         if not isinstance(self.catalog_html, bytes): return metadata
-        try:
+        #try:
+        if 1==1:
             parser = html.HTMLParser(encoding='utf-8')
             doc = html.fromstring(self.catalog_html, parser=parser)
+            # we can have multiple graphs in one web page, either via multiple <script/> elements
+            # or via JSON which actually is a List which contains various graphs
+            # here we scan for both ..
             scripts = doc.xpath('//script[@type="application/ld+json"]/text()')
-            #<script type="application/ld+json">
-            for script_content in scripts:
-                if not script_content.strip(): continue
-                try:
-                    json.loads(script_content)
-                    if mode == 'rdflib':
-                        extracted = self.get_jsonld_metadata(script_content)
-                    else:
-                        extracted = self.get_jsonld_metadata_simple(script_content)
-                    metadata.update(extracted)
-                except json.JSONDecodeError as je:
-                    self.logger.error("Embedded JSON-LD decode Error:" + str(je))
-                    continue
-        except Exception as e:
-            self.logger.error("Loading embedded JSON-LD Error:"+str(e))
-            #print(f"Loading embedded JSON-LD Error: {e}")
+            script_content = []
+
+            if len(scripts) > 1:
+                self.logger.info("GRAPH NOTICE: Found multiple <script> tags to embed JSON-LD metadata graphs: " + str(len(scripts)))
+            #save JSON handling and managing several <script> tags
+            for script_jsonld in scripts:
+                if script_jsonld.strip():
+                    script_jsonld = self._strip_json_comments(script_jsonld)
+                    try:
+                        the_script = json.loads(script_jsonld)
+                        script_content.append(the_script )
+                    except Exception as je:
+                        self.logger.warning("Embedded JSON-LD decode Error, will skip this JSON string:" + str(je))
+            if len(script_content) == 1:
+                script_content = script_content[0]
+
+            script_content = json.dumps(script_content)
+            if script_content:
+                if mode == 'rdflib':
+                    extracted = self.get_jsonld_metadata(script_content)
+                else:
+                    extracted = self.get_jsonld_metadata_simple(script_content)
+                metadata.update(extracted)
         return metadata
     
     def get_linked_jsonld_metadata(self, typed_link, mode = 'rdflib'):
@@ -335,7 +365,6 @@ class MetadataHelper:
                         })
             except Exception as e:
                 self.logger.error("Sitemap metadata parsing Error: " + str(e))
-                #print('FAILED TO GET SITEMAP SERVICE METADATA: ', e)
             if sitemap_services:
                 metadata['services'] = sitemap_services
         return metadata
@@ -382,7 +411,8 @@ class MetadataHelper:
             metadata['services'] = list(grouped_services.values())
         return metadata
 
-    def get_jsonld_metadata_simple(self, jstr):
+    @classmethod
+    def get_jsonld_metadata_simple(cls, jstr):
         # This method used the GraphHelper and JMESPATH instead of RDFlib
         metadata = {}
         if isinstance(jstr, str):
@@ -402,7 +432,7 @@ class MetadataHelper:
                             service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
                         services.append(service_res)
                     else:
-                        self.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
+                        cls.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
             if services:
                 metadata['services'] = services
 
@@ -425,7 +455,7 @@ class MetadataHelper:
         try:
             validate(instance=data, schema=schema)
         except ValidationError as e:
-            print(e.message)
+            self.logger.error('JSON SCHEMA VALIDATION ERROR: '+str(e.message))
 
     def export(self, metadata):
         # creates DCAT JSON-LD
@@ -442,8 +472,11 @@ class MetadataHelper:
             else:
                 return obj
         try:
-            dcat = jmespath.search(expression=DCAT_EXPORT_QUERY, data=metadata)
+            if metadata and list(metadata.keys()) != ['identifier']:
+                dcat = jmespath.search(expression=DCAT_EXPORT_QUERY, data=metadata)
+            else:
+                self.logger.info('Nothing to export using DCAT EXPORT QUERY')
         except Exception as e:
-            print(e)
+            self.logger.error('An error occured during DCAT EXPORT: '+str(e))
 
         return clean_none(dcat)
