@@ -22,6 +22,7 @@ DCAT_EXPORT_QUERY = '''
    },
    "prov:hadPrimarySource": {
   "@type": ['dcat:Catalog', 'foaf:Project'],
+  "dct:type": resource_type || null,
   "dct:title": title,
   "dct:identifier": identifier,
   "dct:publisher": ([publisher] || publisher[])[].{
@@ -31,7 +32,7 @@ DCAT_EXPORT_QUERY = '''
   },
   "dct:description": description,
   "dct:language": language,
-  "dct:contactPoint": (contact||contact[0]).{
+  "dct:contactPoint": ([contact]||contact[])[].{
       "@type": 'vcard:Kind',
       "vcard:telephone": telephone || null,"vcard:fn": fn || null,
       "vcard:hasEmail": hasEmail || email || (contains(to_string(@), '@') && @) || null, 
@@ -59,12 +60,12 @@ REPO_INFO_QUERY = '''{
 title: name || headline[*]."@value" || headline || title || null,
 identifier: ["@id" , identifier][] ,
 resource_type: "@type",
-publisher: [(publisher || provider)] | [].{name: (name || @), country: ("country-name" || address.addressCountry || null)} ,
+publisher: [(publisher || provider)] | [].{name: (name || @), country: ("country-name" || address.addressCountry || null)} || null,
 description: description || abstract || null,
 language: inLanguage || language || null,
 access_terms: accessRights || conditionsOfAccess || ((isAccessibleForFree || free) == `true` && 'unrestricted' || (isAccessibleForFree || free) == `false` && 'restricted' || null),
 contact: contactPoint || null,
-subject: [subjects, keyword, theme][],
+subject: [subjects, keyword, theme][] || null,
 license: license.url ||license."@id" || license.id || license.name || license || null 
 }
 '''
@@ -90,11 +91,11 @@ FAIRSHARING_QUERY ='''
 {
     title: attributes.metadata.name || null,
     identifier: [attributes.metadata.doi, attributes.metadata.cross_references[?portal=='re3data'].url][] || null,
-    resource_type:  attributes.record_type || null,
+    resource_type:  join('', ['fairsharing:',attributes.record_type]) || null,
     publisher:  [attributes.organisation_links[?relation=='maintains'][].{name: organisation_name} , attributes.grants[?relation=='maintains'][].{name: saved_state.name} ][] || null,
     description: attributes.metadata.description || null,
     access_terms: attributes.metadata.data_access_condition.type|| null,
-    contact : attributes.metadata.contacts[].{mail: contact_email},
+    contact : attributes.metadata.contacts[].{email: contact_email},
     subject: attributes.subjects[],
     license: attributes.licence_links[?relation!='undefined'].licence_url || null ,
     policies: [
