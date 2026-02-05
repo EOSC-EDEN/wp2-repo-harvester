@@ -256,7 +256,7 @@ class FAIRsharingHarvester:
         #metadata_nested = attributes.get('metadata', {})
         try:
             metadata = jmespath.search(FAIRSHARING_QUERY, best_record)
-            print(json.dumps(metadata, indent=2))
+            #print(json.dumps(metadata, indent=2))
         except Exception as e:
             self.logger.warning(f"Error parsing FAIRsharing search results with JMESPATH : {e}")
 
