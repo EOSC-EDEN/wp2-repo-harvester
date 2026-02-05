@@ -25,29 +25,13 @@ class FAIRsharingHarvester:
 
     def _authenticate(self):
         """
-        Authenticates with the FAIRsharing API. It first tries environment
-        variables, then falls back to a local credentials file.
+        Authenticates with the FAIRsharing API using environment variables.
         """
         username = os.environ.get('FAIRSHARING_USERNAME')
         password = os.environ.get('FAIRSHARING_PASSWORD')
 
         if not username or not password:
-            self.logger.info("FAIRsharing credentials not in environment variables. Trying local file...")
-            try:
-                cred_path = os.path.join(os.path.dirname(__file__), 'fairsharing_credentials.json')
-                with open(cred_path, 'r') as f:
-                    creds = json.load(f)
-                    username = creds.get('FAIRSHARING_USERNAME')
-                    password = creds.get('FAIRSHARING_PASSWORD')
-            except FileNotFoundError:
-                self.logger.warning("Local credentials file 'fairsharing_credentials.json' not found.")
-                return
-            except (json.JSONDecodeError, KeyError):
-                self.logger.warning("Error reading local credentials file. Make sure it is valid JSON with the correct keys.")
-                return
-
-        if not username or not password:
-            self.logger.warning("FAIRsharing credentials could not be loaded.")
+            self.logger.warning("FAIRSHARING_USERNAME and/or FAIRSHARING_PASSWORD environment variables not set. Authentication will fail.")
             return
 
         url = f"{self.api_url}/users/sign_in"
