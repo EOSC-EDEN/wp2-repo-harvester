@@ -6,16 +6,17 @@ import requests
 from lxml import html
 
 class SignPostingHelper:
-    def __init__(self, url , html=None, headers=None):
+    def __init__(self, url=None , html=None, headers=None):
         self.url = url
-        if html is None or headers is None:
-            response = requests.get(self.url)
-            html = response.text
-            headers = response.headers
-        self.html = html
-        self.headers = headers
-        self.links = []
-        self.set_links()
+        if url:
+            if html is None or headers is None:
+                response = requests.get(self.url)
+                html = response.text
+                headers = response.headers
+            self.html = html
+            self.headers = headers
+            self.links = []
+            self.set_links()
 
 
     def get_linksets(self):
