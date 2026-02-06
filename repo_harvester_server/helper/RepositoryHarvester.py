@@ -291,7 +291,7 @@ class RepositoryHarvester:
                 headers=headers,
                 auth=HTTPBasicAuth(FUSEKI_USERNAME, FUSEKI_PASSWORD)
             )
-            if response.status_code != 200:
+            if response.status_code not in [200, 201]:
                 if response.status_code == 401:
                     self.logger.warning("RepositoryHarvester is not authorized to access FUSEKI. Please check your OS env variables: FUSEKI_USER, FUSEKI_PASSWORD.")
                 self.logger.error(f"FUSEKI error, status code: {response.status_code}")
