@@ -65,7 +65,7 @@ class FAIRsharingHarvester:
         self.logger.info(f"Strategy 1: Searching FAIRsharing by hostname: '{hostname}'")
         metadata = self._search_fairsharing(hostname, hostname_filter=hostname)
         if metadata:
-            self.logger.info(f"Found FAIRsharing record via hostname search: {metadata.get('title')}")
+            self.logger.info(f"SUCCESS: Found FAIRsharing record via hostname search: {metadata.get('title')}")
             return metadata
 
         # Strategy 2: Search by repository name
@@ -74,7 +74,7 @@ class FAIRsharingHarvester:
             self.logger.info(f"Strategy 2: Retrying FAIRsharing search with repository name: '{repo_name}'")
             metadata = self._search_fairsharing(repo_name, hostname_filter=hostname)
             if metadata:
-                self.logger.info(f"Found FAIRsharing record via name search: {metadata.get('title')}")
+                self.logger.info(f"SUCCESS: Found FAIRsharing record via name search: {metadata.get('title')}")
                 return metadata
 
         self.logger.info("FAIRsharing harvest failed: No matching records found.")
