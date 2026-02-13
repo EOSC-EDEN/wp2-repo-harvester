@@ -4,8 +4,15 @@ from urllib.parse import urlparse, urljoin
 
 import requests
 from lxml import html
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 
 class SignPostingHelper:
+    logger = logging.getLogger('SignpostingHelper')
+
     def __init__(self, url=None , html=None, headers=None):
         self.url = url
         if url:
@@ -83,11 +90,11 @@ class SignPostingHelper:
             return  [l for l in self.links if l.get('rel') in rel and l.get('type') in type]
 
     def set_html_links(self):
-        if isinstance(self.html, str):
+        if isinstance(self.html, bytes):
             if self.html:
                 try:
-                    dom = html.fromstring(self.html.encode("utf8"))
-                    links = dom.xpath("/*/head/link")
+                    dom = html.fromstring(self.html)
+                    links = dom.xpath("//head/link")
                     for link in links:
                         href = link.attrib.get("href")
                         rel = link.attrib.get("rel")
@@ -109,7 +116,7 @@ class SignPostingHelper:
                             "title" :title,
                         })
                 except Exception as e:
-                    print('Signposting detection in HTML Error: ', e)
+                    self.logger.error('Signposting detection in HTML Error: '+str(e))
 
     def parse_link_string(self, link_str):
         links = []
@@ -136,7 +143,7 @@ class SignPostingHelper:
 
                     links.append(link_dict)
             except Exception as e:
-                print('Link detection in Link String Error: ', e, link_str)
+                self.logger.error('Link detection in Link String Error: '+str(e) + link_str)
         return links
 
     def set_header_links(self):
