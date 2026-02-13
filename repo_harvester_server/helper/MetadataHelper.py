@@ -437,40 +437,41 @@ class MetadataHelper:
         return metadata
 
     @classmethod
-    def get_jsonld_metadata_simple(cls, jstr):
+    def get_jsonld_metadata_simple(cls, jstr, rootnodeID = None):
         # This method used the GraphHelper and JMESPATH instead of RDFlib
         metadata = {}
         if isinstance(jstr, str):
             try:
                 sg = JSONGraph()
-                sg.parse(jstr)
-                metadata = sg.query(REPO_INFO_QUERY)
-                services = []
-                policies = []
-                for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
-                    service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
-                    if service_res.get('endpoint_uri'):
-                        if isinstance(service_res['endpoint_uri'], str):
-                            #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
-                            service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&")
-                            if 'SearchAction' in str(service_res.get('type')):
-                                service_res['output_format'] = 'text/html'
-                                service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
-                            services.append(service_res)
-                        else:
-                            cls.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
-                if services:
-                    metadata['services'] = services
+                sg.parse(jstr,rootnodeID)
+                if sg.jsonld:
+                    metadata = sg.query(REPO_INFO_QUERY)
+                    services = []
+                    policies = []
+                    for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
+                        service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
+                        if service_res.get('endpoint_uri'):
+                            if isinstance(service_res['endpoint_uri'], str):
+                                #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
+                                service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&")
+                                if 'SearchAction' in str(service_res.get('type')):
+                                    service_res['output_format'] = 'text/html'
+                                    service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
+                                services.append(service_res)
+                            else:
+                                cls.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
+                    if services:
+                        metadata['services'] = services
 
-                for policy_node in sg.getNodesByType(['CreativeWork', 'Policy' ,'PreservationPolicy']):
-                    source_prop = policy_node.get('from_prop')
-                    policy_res = jmespath.search(POLICY_INFO_QUERY, policy_node.get('graph'))
-                    if source_prop !='conformsTo':
-                        policy_res['type'].append(source_prop)
-                    policies.append(policy_res)
+                    for policy_node in sg.getNodesByType(['CreativeWork', 'Policy' ,'PreservationPolicy']):
+                        source_prop = policy_node.get('from_prop')
+                        policy_res = jmespath.search(POLICY_INFO_QUERY, policy_node.get('graph'))
+                        if source_prop !='conformsTo':
+                            policy_res['type'].append(source_prop)
+                        policies.append(policy_res)
 
-                if policies:
-                    metadata['policies'] = policies
+                    if policies:
+                        metadata['policies'] = policies
             except Exception as e:
                 cls.logger.error("JSON parse error: " + str(e))
 
