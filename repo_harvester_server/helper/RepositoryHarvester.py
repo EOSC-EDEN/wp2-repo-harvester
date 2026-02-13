@@ -193,7 +193,7 @@ class RepositoryHarvester:
         Harvests metadata directly from the repository landing page.
         """
         if not self.catalog_html or not self.metadata_helper:
-            self.logger.warning('Cannot perform self-hosted harvest; initial fetch failed.')
+            self.logger.error('Cannot perform self-hosted harvest; initial fetch failed.')
             return
         
         self.logger.info("--- Starting Self-Hosted Harvesting ---")
@@ -239,42 +239,42 @@ class RepositoryHarvester:
             if  metadata_chunk.get('services'):
                 if isinstance(metadata_chunk['services'], dict):
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
+            if self.metadata_helper:
+                export_record = self.metadata_helper.export(metadata_chunk)
+                primary_source = export_record.get('prov:hadPrimarySource')
+                #this would ignore feed metadata etc which have no repo info per se
+                if primary_source:
+                    now = datetime.now()
+                    date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
+                    graph_id = f'eden://harvester/{source}/{self.catalog_url}'
 
-            export_record = self.metadata_helper.export(metadata_chunk)
-            primary_source = export_record.get('prov:hadPrimarySource')
-            #this would ignore feed metadata etc which have no repo info per se
-            if primary_source:
-                now = datetime.now()
-                date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
-                graph_id = f'eden://harvester/{source}/{self.catalog_url}'
+                    export_record['@id'] = graph_id
+                    export_record['dct:issued'] = date_time
 
-                export_record['@id'] = graph_id
-                export_record['dct:issued'] = date_time
+                    if 'prov:wasGeneratedBy' in export_record:
+                        export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
+                        export_record['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source, "Unknown Harvester")
+                        export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
 
-                if 'prov:wasGeneratedBy' in export_record:
-                    export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
-                    export_record['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source, "Unknown Harvester")
-                    export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
+                    if 'prov:hadPrimarySource' in export_record:
+                         export_record['prov:hadPrimarySource']['@id'] = self.catalog_url
 
-                if 'prov:hadPrimarySource' in export_record:
-                     export_record['prov:hadPrimarySource']['@id'] = self.catalog_url
+                    final_records.append(export_record)
+                    self.logger.info(f"Successfully processed record from source: {source}")
+                    ######################## saving to FUSEKI #######################
+                    if save:
+                        json_ld_str =json.dumps(export_record)
+                        g = Graph()
+                        g.parse(data=json_ld_str, format='json-ld')
+                        counted_triples = len(g)
 
-                final_records.append(export_record)
-                self.logger.info(f"Successfully processed record from source: {source}")
-                ######################## saving to FUSEKI #######################
-                if save:
-                    json_ld_str =json.dumps(export_record)
-                    g = Graph()
-                    g.parse(data=json_ld_str, format='json-ld')
-                    counted_triples = len(g)
+                        saved_triples = self.save(graph_id, json_ld_str)
 
-                    saved_triples = self.save(graph_id, json_ld_str)
-
-                    if saved_triples != None:
-                        if saved_triples < counted_triples:
-                            self.logger.warning(f"FUSEKI import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
-            else:
-                 self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
+                        if saved_triples != None:
+                            if saved_triples < counted_triples:
+                                self.logger.warning(f"FUSEKI import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
+                else:
+                     self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
 
         self.logger.info("--- Finished Export ---")
         return final_records
