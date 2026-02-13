@@ -25,7 +25,6 @@ class SignPostingHelper:
             self.links = []
             self.set_links()
 
-
     def get_linksets(self):
         linksets =  self.get_links('linkset')
         return linksets
