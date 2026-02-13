@@ -117,10 +117,14 @@ class MetadataHelper:
             if typ: metadata['resource_type'] = typ[0].strip()
         except Exception: pass
         metadata =  {k: v for k, v in metadata.items() if v}
-        if not metadata.get('resource_type'):
-            metadata['resource_type'] = 'dcmitype:Text'
+        if not metadata:
+            self.logger.warning("No meta tags found")
         else:
-            metadata['resource_type'] = ['dcmitype:Text', str(metadata['resource_type'])]
+            self.logger.info("SUCCESS: Found meta tags metadata")
+            if not metadata.get('resource_type'):
+                metadata['resource_type'] = 'dcmitype:Text'
+            else:
+                metadata['resource_type'] = ['dcmitype:Text', str(metadata['resource_type'])]
         return metadata
 
     def _extract_publisher(self, g, resource_node):
@@ -294,9 +298,9 @@ class MetadataHelper:
 
     def get_embedded_jsonld_metadata(self,  mode = 'rdflib'):
         metadata = {}
+        self.logger.info('Trying to identify embedded JSONLD metadata')
         if not isinstance(self.catalog_html, bytes): return metadata
-        #try:
-        if 1==1:
+        try:
             parser = html.HTMLParser(encoding='utf-8')
             doc = html.fromstring(self.catalog_html, parser=parser)
             # we can have multiple graphs in one web page, either via multiple <script/> elements
@@ -326,9 +330,16 @@ class MetadataHelper:
                 else:
                     extracted = self.get_jsonld_metadata_simple(script_content)
                 metadata.update(extracted)
+        except Exception as e:
+            self.logger.error("Error processing JSON-LD: " + str(e))
+        if not metadata:
+            self.logger.warning("No embedded JSONLD metadata found")
+        else:
+            self.logger.info("SUCCESS: Found embedded JSONLD metadata")
         return metadata
     
     def get_linked_jsonld_metadata(self, typed_link, mode = 'rdflib'):
+        self.logger.info('Trying to retrieve linked (signposting) jsonld metadata from ' + typed_link)
         metadata = {}
         if 'http' in str(typed_link):
             try:
@@ -347,9 +358,12 @@ class MetadataHelper:
             except Exception as e:
                 self.logger.error("Remote JSON loading Error: " + str(e))
                 pass
+        if metadata:
+            self.logger.info('SUCCESS: Found linked (signposting) jsonld metadata')
         return metadata
 
     def get_sitemap_service_metadata(self):
+        self.logger.info('Trying to identify sitemap service metadata')
         metadata = {}
         sitemap_services = []
         if self.catalog_url:
@@ -367,9 +381,13 @@ class MetadataHelper:
                 self.logger.error("Sitemap metadata parsing Error: " + str(e))
             if sitemap_services:
                 metadata['services'] = sitemap_services
+                self.logger.info("SUCCESS: Found sitemap service metadata")
+            else:
+                self.logger.warning("No sitemap service metadata found")
         return metadata
 
     def get_feed_metadata(self):
+        self.logger.info('Trying to identify feed service metadata')
         metadata = {}
         services = []
         feed_types = {'application/rss+xml':'https://www.rssboard.org/rss-specification',
@@ -384,13 +402,19 @@ class MetadataHelper:
             })
         if services:
             metadata['services'] = services
+            self.logger.info('SUCCESS: Found feed service metadata')
+        else:
+            self.logger.warning('No feed service metadata found')
         return metadata
 
     def get_fairicat_metadata(self):
+        self.signposting_helper.logger.info('Trying to identify fairicat service metadata')
+
         metadata = {}
         services = []
         fairicat_api_links = self.signposting_helper.get_links(rel=['service-doc', 'service-meta'])
-        
+        if not fairicat_api_links:
+            self.signposting_helper.logger.warning('No fairicat metadata links found')
         # Use a dictionary to group by anchor
         grouped_services = {}
         for api_link in fairicat_api_links:
@@ -408,6 +432,7 @@ class MetadataHelper:
                     grouped_services[anchor]['output_format'] = api_link.get('type')
         
         if grouped_services:
+            self.signposting_helper.logger.info('SUCCESS: Found fairicat service metadata')
             metadata['services'] = list(grouped_services.values())
         return metadata
 
@@ -416,35 +441,38 @@ class MetadataHelper:
         # This method used the GraphHelper and JMESPATH instead of RDFlib
         metadata = {}
         if isinstance(jstr, str):
-            sg = JSONGraph()
-            sg.parse(jstr)
-            metadata = sg.query(REPO_INFO_QUERY)
-            services = []
-            policies = []
-            for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
-                service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
-                if service_res.get('endpoint_uri'):
-                    if isinstance(service_res['endpoint_uri'], str):
-                        #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
-                        service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&")
-                        if service_res.get('type') == 'SearchAction':
-                            service_res['output_format'] = 'text/html'
-                            service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
-                        services.append(service_res)
-                    else:
-                        cls.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
-            if services:
-                metadata['services'] = services
+            try:
+                sg = JSONGraph()
+                sg.parse(jstr)
+                metadata = sg.query(REPO_INFO_QUERY)
+                services = []
+                policies = []
+                for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
+                    service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
+                    if service_res.get('endpoint_uri'):
+                        if isinstance(service_res['endpoint_uri'], str):
+                            #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
+                            service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&")
+                            if 'SearchAction' in str(service_res.get('type')):
+                                service_res['output_format'] = 'text/html'
+                                service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
+                            services.append(service_res)
+                        else:
+                            cls.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
+                if services:
+                    metadata['services'] = services
 
-            for policy_node in sg.getNodesByType(['CreativeWork', 'Policy' ,'PreservationPolicy']):
-                source_prop = policy_node.get('from_prop')
-                policy_res = jmespath.search(POLICY_INFO_QUERY, policy_node.get('graph'))
-                if source_prop !='conformsTo':
-                    policy_res['type'].append(source_prop)
-                policies.append(policy_res)
+                for policy_node in sg.getNodesByType(['CreativeWork', 'Policy' ,'PreservationPolicy']):
+                    source_prop = policy_node.get('from_prop')
+                    policy_res = jmespath.search(POLICY_INFO_QUERY, policy_node.get('graph'))
+                    if source_prop !='conformsTo':
+                        policy_res['type'].append(source_prop)
+                    policies.append(policy_res)
 
-            if policies:
-                metadata['policies'] = policies
+                if policies:
+                    metadata['policies'] = policies
+            except Exception as e:
+                cls.logger.error("JSON parse error: " + str(e))
 
         return metadata
 
