@@ -2,6 +2,12 @@ import copy
 import json
 import uuid
 import jmespath
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 
 class JSONGraph:
     # takes JSON-LD graphs,detects the main entity and rebuilds the graph as JSON using the main entity as root
@@ -12,6 +18,8 @@ class JSONGraph:
     # wrong namespaces or variants of namespace http://schema.org https://www.schema.org http://www.schema.org/ etc.
     # and due to some frustrating experience with context file loading by RDFlib which may take up to a minute
     # I just decided to try this workaround.
+
+    logger = logging.getLogger('RepositoryHarvester')
 
     def __init__(self):
         self.mainNode = None
@@ -24,33 +32,40 @@ class JSONGraph:
         # parses a given JSON-LD string representing a graphs and returns a rebuilt new, nested JSON-LD
         # which starts with a root node which can either be defined using rootNodeID or is alternatively
         # determined as the 'most important' node called self.mainNode; see scoring in _setNodesInfo
-        self.jsonld = json.loads(jsonstr)
-        # basically three possibilities:
-        # 1: a simple list containing other graphs
-        # 2: a @graph list containg other graphs
-        # 3: simply one graph
-        if isinstance(self.jsonld, list):
-            branches = self.jsonld
-        else:
-            branches = self.jsonld.get('@graph')
-        if not branches:
-            branches = [self.jsonld]
+        #if
+        try:
+            self.jsonld = json.loads(jsonstr)
+            if self.jsonld:
+                # basically three possibilities:
+                # 1: a simple list containing other graphs
+                # 2: a @graph list containg other graphs
+                # 3: simply one graph
+                if isinstance(self.jsonld, list):
+                    branches = self.jsonld
+                else:
+                    branches = self.jsonld.get('@graph')
+                if not branches:
+                    branches = [self.jsonld]
 
-            #parse, detect individual typed nodes and rebuild graph using the main node as starting point
-        if isinstance(branches, list):
-            for branch in branches:
-                self._setNodes(branch)
-            self._setNodesInfo()
-            if rootNodeID and self.nodes.get(rootNodeID):
-                rootNode = self.nodes[rootNodeID]
+                    #parse, detect individual typed nodes and rebuild graph using the main node as starting point
+                if isinstance(branches, list):
+                    for branch in branches:
+                        self._setNodes(branch)
+                    self._setNodesInfo()
+                    if rootNodeID and self.nodes.get(rootNodeID):
+                        rootNode = self.nodes[rootNodeID]
+                    else:
+                        rootNode = self.nodes.get(self.mainNode)
+                    if rootNode:
+                        root = rootNode['dict']
+                        #print('ROOT: ', mainnode)
+                        # the graph is re-created so that the main node is the root node in the resulting JSON
+                        # however this may just be a subgraph, since it is just rebuilt starting at root
+                        self.jsonld = self.expandNode(root)
             else:
-                rootNode = self.nodes[self.mainNode]
-            if rootNode:
-                root = rootNode['dict']
-                #print('ROOT: ', mainnode)
-                # the graph is re-created so that the main node is the root node in the resulting JSON
-                # however this may just be a subgraph, since it is just rebuilt starting at root
-                self.jsonld = self.expandNode(root)
+               self.logger.error('EMPTY JSON Graph')
+        except Exception as e:
+            self.logger.error( 'JSON graph parsing problem: '+str(e))
             #print('REBUILT JSON: ', json.dumps(self.jsonld, indent=2))
 
     def _setNodes(self, branch, fromprop = None):
