@@ -46,14 +46,14 @@ DCAT_EXPORT_QUERY = '''
       "@id": endpoint_uri,
       "@type": 'dcat:DataService',
       "dcat:endpointURL": endpoint_uri,
-      "dct:conformsTo": conforms_to,
-      "dct:title": title,
-      "dct:format": output_format
+      "dct:conformsTo": conforms_to || null,
+      "dct:title": title || null,
+      "dct:format": output_format || null
   },
   "dct:conformsTo": policies[?policy_uri].{
   "@id": policy_uri,
-  "@type": ['dct:Policy', type][]
-  "dct:title": title
+  "@type": ['dct:Policy', type][],
+  "dct:title": title || null
   }
 }}
 '''
