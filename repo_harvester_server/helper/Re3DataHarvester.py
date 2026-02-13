@@ -205,11 +205,12 @@ class Re3DataHarvester:
         for inst_element in repo_root.findall(".//r3d:institution", self.ns):
             inst_name = find_text(inst_element, 'r3d:institutionName')
             inst_country = find_text(inst_element, 'r3d:institutionCountry')
+            inst_url = find_text(inst_element, 'r3d:institutionURL')
             if re.match(r'^[A-Z]{3}$', str(inst_country)):
                 if inst_country in country_codes_3:
                     inst_country = country_codes_3[inst_country]
             if inst_name:
-                publishers.append({"type": "org:Organization", "name": inst_name, "country": inst_country})
+                publishers.append({"type": "org:Organization", "name": inst_name, "country": inst_country, "url": inst_url})
         contact = {}
         for contact_elem in repo_root.findall(".//r3d:repositoryContact", self.ns):
             if '@' in contact_elem.text:
@@ -245,6 +246,19 @@ class Re3DataHarvester:
             find_text(repo_root, ".//r3d:repositoryURL")
         ] + find_all_text(repo_root, ".//r3d:repositoryIdentifier")
 
+        policies = []
+        for policy_elem in repo_root.findall(".//r3d:policy", self.ns):
+            policy_name =  find_text(policy_elem, 'r3d:policyName')
+            policy_url = find_text(policy_elem, 'r3d:policyURL')
+            policies.append({'policy_uri':policy_url, 'title': policy_name})
+
+        keywords = find_all_text(repo_root, ".//r3d:keyword")
+        keywords.extend(find_all_text(repo_root, ".//r3d:subject"))
+        clean_keywords = []
+        for kw in keywords:
+            #clean DFG style subjects
+            clean_keywords.append(re.sub(r'^([0-9]+\s)', '', kw, flags=re.M))
+        keywords = clean_keywords
 
         metadata = {
             'resource_type' : 'r3d:Repository',# see: https://github.com/re3data/ontology/blob/master/r3dOntology.ttl
@@ -255,7 +269,9 @@ class Re3DataHarvester:
             'contact' : contact,
             #'contact': find_all_text(repo_root, ".//r3d:repositoryContact"),
             'services': services if services else None,
+            'policies': policies if policies else None,
             'keywords': find_all_text(repo_root, ".//r3d:keyword"),
-            'subject': find_all_text(repo_root, ".//r3d:subject")
+            'subject': keywords if keywords else None,
+            'license': find_text(repo_root, ".//r3d:dataLicenseURL") or find_text(repo_root, ".//r3d:dataLicenseName"),
         }
         return {k: v for k, v in metadata.items() if v}
