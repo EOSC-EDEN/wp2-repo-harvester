@@ -28,13 +28,15 @@ DCAT_EXPORT_QUERY = '''
   "dct:publisher": ([publisher] || publisher[])[].{
   "@type": 'foaf:Agent', 
   "foaf:name":name,
-  "vcard:country":country||address.addressCountry
+  "vcard:country":country||address.addressCountry,
+  "foaf:homepage":url
   },
   "dct:description": description,
   "dct:language": language,
   "dct:contactPoint": ([contact]||contact[])[].{
       "@type": 'vcard:Kind',
-      "vcard:telephone": telephone || null,"vcard:fn": fn || null,
+      "vcard:hasTelephone": telephone || null,
+      "vcard:fn": fn || null,
       "vcard:hasEmail": hasEmail || email || (contains(to_string(@), '@') && @) || null, 
       "vcard:url": url || (contains(to_string(@), 'http') && @) || null
   },
@@ -58,13 +60,21 @@ DCAT_EXPORT_QUERY = '''
 
 REPO_INFO_QUERY = '''{
 title: name || headline[*]."@value" || headline || title || null,
-identifier: ["@id" , identifier][] ,
+identifier: ["@id" , identifier][] || null,
 resource_type: "@type",
-publisher: [(publisher || provider)] | [].{name: (name || @), country: ("country-name" || address.addressCountry || null)} || null,
+publisher: [(publisher || provider)] | [].{
+    name: (name || @), 
+    country: (country||"country-name" || address.addressCountry || null),
+    url: url||homepage||address.url
+} || null,
 description: description || abstract || null,
 language: inLanguage || language || null,
 access_terms: accessRights || conditionsOfAccess || ((isAccessibleForFree || free) == `true` && 'unrestricted' || (isAccessibleForFree || free) == `false` && 'restricted' || null),
-contact: contactPoint || null,
+contact: ([contactPoint]||contactPoint[])[].{
+    email: email||hasEmail.hasValue||hasEmail||null, 
+    telephone: telephone||tel||hasTelephone.hasValue||hasTelephone||null, 
+    url: url||hasURL.hasValue||hasUrl||null 
+} || null,
 subject: [subjects, keyword, theme][] || null,
 license: license.url ||license."@id" || license.id || license.name || license || null 
 }
@@ -92,7 +102,7 @@ FAIRSHARING_QUERY ='''
     title: attributes.metadata.name || null,
     identifier: [attributes.metadata.doi, attributes.metadata.cross_references[?portal=='re3data'].url][] || null,
     resource_type:  join('', ['fairsharing:',attributes.record_type]) || null,
-    publisher:  [attributes.organisation_links[?relation=='maintains'][].{name: organisation_name} , attributes.grants[?relation=='maintains'][].{name: saved_state.name} ][] || null,
+    publisher:  attributes.organisation_links[?relation=='maintains'][].{name: organisation_name} || attributes.grants[?relation=='maintains'][].{name: saved_state.name} || null,
     description: attributes.metadata.description || null,
     access_terms: attributes.metadata.data_access_condition.type|| null,
     contact : attributes.metadata.contacts[].{email: contact_email},
