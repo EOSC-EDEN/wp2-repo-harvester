@@ -34,18 +34,18 @@ class JSONGraph:
         # determined as the 'most important' node called self.mainNode; see scoring in _setNodesInfo
         #if
         try:
-            self.jsonld = json.loads(jsonstr)
-            if self.jsonld:
+            jsonld = json.loads(jsonstr)
+            if jsonld:
                 # basically three possibilities:
                 # 1: a simple list containing other graphs
                 # 2: a @graph list containg other graphs
                 # 3: simply one graph
-                if isinstance(self.jsonld, list):
-                    branches = self.jsonld
+                if isinstance(jsonld, list):
+                    branches = jsonld
                 else:
-                    branches = self.jsonld.get('@graph')
+                    branches = jsonld.get('@graph')
                 if not branches:
-                    branches = [self.jsonld]
+                    branches = [jsonld]
 
                     #parse, detect individual typed nodes and rebuild graph using the main node as starting point
                 if isinstance(branches, list):
@@ -63,7 +63,7 @@ class JSONGraph:
                         # however this may just be a subgraph, since it is just rebuilt starting at root
                         self.jsonld = self.expandNode(root)
             else:
-               self.logger.error('EMPTY JSON Graph')
+               self.logger.warning('EMPTY JSON Graph')
         except Exception as e:
             self.logger.error( 'JSON graph parsing problem: '+str(e))
             #print('REBUILT JSON: ', json.dumps(self.jsonld, indent=2))
