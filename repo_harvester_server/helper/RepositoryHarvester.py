@@ -61,7 +61,7 @@ class RepositoryHarvester:
             response.raise_for_status()
             #using the canonical url to identify the resource
             if response.url != self.catalog_url:
-                self.logger.warning("Redirected to URI: %s , so will use this as the canonical URL", response.url)
+                self.logger.info("Redirected to URI: %s , so will use this as the canonical URL", response.url)
                 self.catalog_ids.append(response.url)
                 self.catalog_url = response.url
             self.catalog_html = response.text
@@ -101,16 +101,22 @@ class RepositoryHarvester:
             """
             Recursively remove keys with value None from dictionaries and lists.
             """
-            if isinstance(obj, dict):
-                return {
-                    k: clean_none(v)
-                    for k, v in obj.items()
-                    if v is not None
-                }
-            elif isinstance(obj, list):
-                return [clean_none(item) for item in obj]
-            else:
+            try:
+                if isinstance(obj, dict):
+                    return {
+                        k: clean_none(v)
+                        for k, v in obj.items()
+                        if v is not None
+                    }
+                elif isinstance(obj, list):
+                    return [clean_none(item) for item in obj]
+                else:
+                    return obj
+            except Exception as e:
+                self.logger.error("Failed to clean metadata (remove empty values) : %s", e)
                 return obj
+
+
         if new_metadata:
             new_metadata = clean_none(new_metadata)
             if not new_metadata.get('identifier'):
@@ -194,8 +200,13 @@ class RepositoryHarvester:
         mode = 'simple'
         try:
             self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(mode), 'embedded_jsonld')
+
             self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(), 'meta_tags')
-            for link in self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json'):
+            self.metadata_helper.signposting_helper.logger.info("Trying to find metadata using signposting links")
+            signposting_links = self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json')
+            if not signposting_links:
+                self.metadata_helper.signposting_helper.logger.warning("No signposting links found")
+            for link in signposting_links:
                 self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
             self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
             self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
