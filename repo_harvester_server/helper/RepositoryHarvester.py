@@ -241,9 +241,9 @@ class RepositoryHarvester:
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
             if self.metadata_helper:
                 export_record = self.metadata_helper.export(metadata_chunk)
-                primary_source = export_record.get('prov:hadPrimarySource')
+                primary_topic = export_record.get('foaf:primaryTopic')
                 #this would ignore feed metadata etc which have no repo info per se
-                if primary_source:
+                if primary_topic:
                     now = datetime.now()
                     date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
                     graph_id = f'eden://harvester/{source}/{self.catalog_url}'
@@ -256,8 +256,8 @@ class RepositoryHarvester:
                         export_record['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source, "Unknown Harvester")
                         export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
 
-                    if 'prov:hadPrimarySource' in export_record:
-                         export_record['prov:hadPrimarySource']['@id'] = self.catalog_url
+                    if 'foaf:primaryTopic' in export_record:
+                         export_record['foaf:primaryTopic']['@id'] = self.catalog_url
 
                     final_records.append(export_record)
                     self.logger.info(f"Successfully processed record from source: {source}")

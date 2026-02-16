@@ -20,7 +20,7 @@ DCAT_EXPORT_QUERY = '''
    "@type": 'prov:SoftwareAgent',
    "prov:label" : 'EDEN Catalog Service Harvester'
    },
-   "prov:hadPrimarySource": {
+   "foaf:primaryTopic": {
   "@type": ['dcat:Catalog', 'foaf:Project'],
   "dct:type": resource_type || null,
   "dct:title": title,
@@ -31,6 +31,7 @@ DCAT_EXPORT_QUERY = '''
   "vcard:country":country||address.addressCountry,
   "foaf:homepage":url
   },
+  "prov:hadPrimarySource" :   hadPrimarySource || null,
   "dct:description": description,
   "dct:language": language,
   "dct:contactPoint": ([contact]||contact[])[].{

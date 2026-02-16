@@ -22,7 +22,7 @@ def get_repo_info(url):  # noqa: E501
         exported_records = harvester.harvest()
 
         # 3. Collect all services from all exported records
-        #    Services are nested in prov:hadPrimarySource.dcat:service
+        #    Services are nested in foaf:primaryTopic.dcat:service
         all_services = []
         for record in exported_records:
             if isinstance(record, dict):
@@ -33,8 +33,9 @@ def get_repo_info(url):  # noqa: E501
                 elif services:
                     all_services.append(services)
 
-                # Check nested in prov:hadPrimarySource
-                primary_source = record.get("prov:hadPrimarySource", {})
+                # Check nested in foaf:primaryTopic
+
+                primary_source = record.get("foaf:primaryTopic", {})
                 if isinstance(primary_source, dict):
                     nested_services = primary_source.get("dcat:service", [])
                     if isinstance(nested_services, list):

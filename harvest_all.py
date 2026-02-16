@@ -78,8 +78,8 @@ def harvest_repository(url, name):
             elif services:
                 all_services.append(services)
 
-            # Check nested in prov:hadPrimarySource
-            primary_source = record.get("prov:hadPrimarySource", {})
+            # Check nested in foaf:primaryTopic
+            primary_source = record.get("foaf:primaryTopic", {})
             if isinstance(primary_source, dict):
                 nested_services = primary_source.get("dcat:service", [])
                 if isinstance(nested_services, list):
