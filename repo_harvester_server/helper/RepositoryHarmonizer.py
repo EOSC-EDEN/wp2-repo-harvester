@@ -63,6 +63,9 @@ class RepositoryHarmonizer:
             return obj
 
     def harmonize(self):
+        """
+        actually THE harmonize method which should be called to perform the harmonization
+        """
         combined = {}
         basic_props = ['title', 'description', 'publisher', 'contact']
 
@@ -116,6 +119,9 @@ class RepositoryHarmonizer:
         return merged_catalog_dcat
 
     def merge(self, records, merge_fields, key_field, catalog_id):
+        """
+        Save merging of lists and dicts etc within a graph
+        """
         def as_list(x):
             return x if isinstance(x, list) else [x] if x else []
 
@@ -161,6 +167,9 @@ class RepositoryHarmonizer:
         ]
 
     def get_graphs(self):
+        """
+        Retrieve all named graphs from FUSEKI.
+        """
         FUSEKI_USERNAME = os.environ.get('FUSEKI_USERNAME')
         FUSEKI_PASSWORD = os.environ.get('FUSEKI_PASSWORD')
 
