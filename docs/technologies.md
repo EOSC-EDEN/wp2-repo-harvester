@@ -67,7 +67,7 @@ CatalogRecord
 │   ├── timestamp            # Harvest datetime
 │   └── method               # Extraction method used
 │
-└── prov:hadPrimarySource    # The harvested Catalog
+└── foaf:primaryTopic    # The harvested Catalog
     ├── dct:title            # Repository name
     ├── dct:identifier       # Unique identifier
     ├── dct:description      # Repository description
