@@ -7,6 +7,8 @@ import logging
 
 from rdflib import Graph
 
+from repo_harvester_server.helper.RepositoryHarmonizer import RepositoryHarmonizer
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -15,6 +17,7 @@ logging.basicConfig(
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
+from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 
 from repo_harvester_server.config import FUSEKI_PATH
 from repo_harvester_server.helper.SPARQLQueries import GET_ALL_GRAPHS
@@ -46,6 +49,8 @@ class RepositoryHarvester:
         self.catalog_ids = [self.catalog_url]
 
         self.check_environment_variables()
+
+        self.fuseki = FUSEKIHelper()
 
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)
@@ -128,14 +133,18 @@ class RepositoryHarvester:
         """
         Main entry point.
         1. Tries to harvest directly from the website (Self-Hosted).
-        2. If that fails to find a Title, falls back to re3data (Registry).
+        2. Then harvest information from registries: FAIRsharing & re3data (Registry).
         :param where str: default None, the source to be harvested can be either 'self-hosted' or 'registry'
         """
+        harvested_records = None
         if not where or where == 'self-hosted':
             self.harvest_self_hosted_metadata()
         if not where or where == 'registry':
             self.harvest_registry_metadata()
-        return self.export(True)
+        # 3. final step: harmonize all records and save resulting graph in FUSEKI
+        harvested_records = self.export_and_save(True)
+        self.harmonize()
+        return harvested_records
 
     def harvest_registry_metadata(self):
         """
@@ -188,6 +197,10 @@ class RepositoryHarvester:
 
         self.logger.info("--- Finished Registry Harvesting ---")
 
+    def harmonize(self):
+        h = RepositoryHarmonizer(self.catalog_url)
+        harmonized_info = h.harmonize()
+
     def harvest_self_hosted_metadata(self):
         """
         Harvests metadata directly from the repository landing page.
@@ -215,7 +228,7 @@ class RepositoryHarvester:
         except Exception as e:
             self.logger.error(f"An error occurred during self-hosted harvest: {e}")
 
-    def export(self, save=False):
+    def export_and_save(self, save=False):
         """
         Exports harvested metadata to DCAT JSON-LD.
         It uses the MetadataHelper export method which is based on JMESPATH see: JMESPATHQueries.py
@@ -268,7 +281,7 @@ class RepositoryHarvester:
                         g.parse(data=json_ld_str, format='json-ld')
                         counted_triples = len(g)
 
-                        saved_triples = self.save(graph_id, json_ld_str)
+                        saved_triples = self.fuseki.save(graph_id, json_ld_str)
 
                         if saved_triples != None:
                             if saved_triples < counted_triples:
@@ -279,37 +292,3 @@ class RepositoryHarvester:
         self.logger.info("--- Finished Export ---")
         return final_records
 
-    def save(self, graph_uri, graph_jsonld):
-        """
-        Saves a named graph in a JENA FUSEKI triple store
-        :param graph_uri:
-        :param graph_jsonld:
-        :return: int, number of saved triples
-        """
-        self.logger.info("Attempting to save graph in FUSEKI : "+ str(graph_uri))
-        count = None
-        try:
-            headers = {
-                "Content-Type": "application/ld+json"
-            }
-            FUSEKI_USERNAME = os.environ.get('FUSEKI_USERNAME')
-            FUSEKI_PASSWORD = os.environ.get('FUSEKI_PASSWORD')
-            # Use graph store protocol
-            response = requests.put(
-                FUSEKI_PATH,
-                params={"graph": graph_uri},
-                data=graph_jsonld,
-                headers=headers,
-                auth=HTTPBasicAuth(FUSEKI_USERNAME, FUSEKI_PASSWORD)
-            )
-            if response.status_code not in [200, 201]:
-                if response.status_code == 401:
-                    self.logger.warning("RepositoryHarvester is not authorized to access FUSEKI. Please check your OS env variables: FUSEKI_USER, FUSEKI_PASSWORD.")
-                self.logger.error(f"FUSEKI error, status code: {response.status_code}")
-            else:
-                count = response.json().get('count')
-        except requests.exceptions.ConnectionError as e:
-            self.logger.error("FUSEKI server not available / connection failed: "+str(e))
-        except Exception as e:
-            self.logger.error(f"FUSEKI error occured while saving graph: {e}")
-        return count
