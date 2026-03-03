@@ -6,9 +6,9 @@ from collections import Counter
 import jmespath
 import requests
 
-from SPARQLWrapper import SPARQLWrapper, JSON
 
 from repo_harvester_server.config import FUSEKI_PATH
+from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 from repo_harvester_server.helper.JMESPATHQueries import DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.GraphHelper import JSONGraph
@@ -22,10 +22,11 @@ logging.basicConfig(
 
 
 class RepositoryHarmonizer:
-    logger = logging.getLogger('RepositoryHarvester')
+    logger = logging.getLogger('RepositoryHarmonizer')
 
     def __init__(self, repouri):
         self.repouri = repouri
+        self.fuseki = FUSEKIHelper()
 
     def clean_none(self, obj):
         """
@@ -66,17 +67,36 @@ class RepositoryHarmonizer:
         """
         actually THE harmonize method which should be called to perform the harmonization
         """
+        def clean_value(value):
+            if isinstance(value, str):
+                return value
+            elif isinstance(value, dict):
+                if list(value.keys()) == ['@id']:
+                    return value['@id']
+            else:
+                return str(value)
+
+
+
         combined = {}
         basic_props = ['title', 'description', 'publisher', 'contact']
 
+        self.logger.info('--- Starting Harmonization ---')
+
         # Build combined dict from all graphs
-        for gid, g in self.get_graphs().items():
+        all_graphs = self.fuseki.get_repo_graphs(self.repouri)
+        if not all_graphs:
+            self.logger.error('Could not find any data related to this repo in FUSEKI: {}'.format(str(self.repouri)) )
+            return False
+        else:
+            self.logger.info('Found {} raw records related to this repo in FUSEKI: {}'.format(str(len(all_graphs.items())),str(self.repouri)))
+
+        for gid, g in all_graphs.items():
             mh = MetadataHelper()
             rg = JSONGraph()
             rg.parse(json.dumps(g), gid)
             catalog_graph = jmespath.search('primaryTopic', rg.jsonld)
             catalog_dict = mh.get_jsonld_metadata_simple(json.dumps(catalog_graph), self.repouri)
-
             src = gid.split('/')[3]
             for k, v in catalog_dict.items():
                 items = v if isinstance(v, list) else [v]
@@ -98,7 +118,7 @@ class RepositoryHarmonizer:
             elif k == 'policies':
                 policy_info.extend(v)
             else:
-                values = [vl.get("value") for vl in v]
+                values = [clean_value(vl.get("value")) for vl in v]
                 catalog_info[k] = list(set(catalog_info.get(k, []) + values))
 
         if isinstance(catalog_info.get("subject"), list):
@@ -114,7 +134,13 @@ class RepositoryHarmonizer:
 
         if merged_catalog_dcat.get("prov:wasGeneratedBy"):
             merged_catalog_dcat["prov:wasGeneratedBy"]["prov:name"] = 'Metadata harmonizing activity'
-        merged_catalog_dcat["@id"] = "eden://harvester/harmonized/"+str(self.repouri)
+        merged_uri = f"eden://harvester/harmonized/"+str(self.repouri)
+        merged_catalog_dcat["@id"] = merged_uri
+
+        # save harmonized record in FUSEKI
+        self.fuseki.save(merged_uri,json.dumps(merged_catalog_dcat))
+
+        self.logger.info('--- Finished Harmonization ---')
 
         return merged_catalog_dcat
 
@@ -166,42 +192,7 @@ class RepositoryHarmonizer:
             for item in merged.values()
         ]
 
-    def get_graphs(self):
-        """
-        Retrieve all named graphs from FUSEKI.
-        """
-        FUSEKI_USERNAME = os.environ.get('FUSEKI_USERNAME')
-        FUSEKI_PASSWORD = os.environ.get('FUSEKI_PASSWORD')
 
-        sparql = SPARQLWrapper(str(FUSEKI_PATH).replace('/data', '/sparql'))
-        if FUSEKI_USERNAME and FUSEKI_PASSWORD:
-            sparql.setCredentials(FUSEKI_USERNAME, FUSEKI_PASSWORD)
-
-        # Step1: use SPARQL query to get all graphs for a given catalog/repo
-        sparql.setQuery(f"""
-            SELECT DISTINCT ?g
-            WHERE {{
-              GRAPH ?g {{ ?s ?p ?o }}
-              FILTER(CONTAINS(STR(?g), "{self.repouri}"))
-            }}
-            """)
-        sparql.setReturnFormat(JSON)
-        all_graphs = {}
-        try:
-            results = sparql.query().convert()
-            graph_uris = [r['g']['value'] for r in results["results"]["bindings"]]
-            # Step 2: retrieve each graph via GSP
-
-            for g_uri in graph_uris:
-                params = {"graph": g_uri}
-                headers = {"Accept": "application/ld+json"}
-                auth = (FUSEKI_USERNAME, FUSEKI_PASSWORD)
-                r = requests.get(str(FUSEKI_PATH), params=params, headers=headers, auth=auth)
-                all_graphs[g_uri]= r.json()
-        except Exception as e:
-            self.logger.error('FUSEKI (while trying to SPARQL) Error: '+str(e))
-
-        return all_graphs
 
     def get_best_records(self, records, size_weight=1.0, source_weight=0.5, freq_weight=1.0):
         """
@@ -258,14 +249,9 @@ class RepositoryHarmonizer:
                 best_records = best_records[0]
         return best_records, best_source
 
-catalog_id = 'https://pangaea.de/'
-#catalog_id = 'https://dans.knaw.nl/nl/social-sciences-and-humanities/'
-#catalog_id = 'https://dais.sanu.ac.rs/'
+
+'''Usage:
 h = RepositoryHarmonizer(catalog_id)
-
-
 catalog_info = h.harmonize()
-
-
-print(json.dumps(catalog_info , indent=2))
+print(json.dumps(catalog_info , indent=2))'''
 
