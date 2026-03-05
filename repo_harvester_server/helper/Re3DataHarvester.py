@@ -43,12 +43,15 @@ class Re3DataHarvester:
         Public method to harvest metadata for a given URL.
         It searches by the domain and then verifies the results.
         """
+        hostnames = []
         self.logger.info("-- Harvesting from re3data by URL -- ")
-        hostname = urlparse(catalog_url).hostname
-        if not hostname:
-            return None
-        
-        return self._search_and_verify(hostname, 'hostname')
+        catalog_url = catalog_url.split('|')
+        for url in catalog_url:
+            hostname = urlparse(url).hostname
+            if hostname:
+                hostnames.append(hostname)
+        catalog_query = '|'.join(hostnames)
+        return self._search_and_verify(catalog_query, 'hostname')
 
     def harvest_by_name(self, repo_name):
         """
@@ -84,24 +87,25 @@ class Re3DataHarvester:
         - 'data.dans.knaw.nl' (4 parts) does NOT match 'knaw.nl' (2 parts) - diff 2 ✗
         - 'data.dans.knaw.nl' (4 parts) matches 'dans.knaw.nl' (3 parts) - diff 1 ✓
         """
-        h1 = self._normalize_hostname(query_hostname)
         h2 = self._normalize_hostname(record_hostname)
 
-        if not h1 or not h2:
-            return False
-
-        if h1 == h2:
-            return True
-
-        # Check if one is a subdomain of the other with max depth difference of 1
-        # e.g., "about.coscine.de" should match "coscine.de"
-        h1_parts = h1.split('.')
-        h2_parts = h2.split('.')
-        depth_diff = abs(len(h1_parts) - len(h2_parts))
-
-        if depth_diff == 1:
-            if h1.endswith('.' + h2) or h2.endswith('.' + h1):
+        all_hostnames = query_hostname.split('|') # can look like : domain.de|test.domain.de
+        for query_hostname in all_hostnames:
+            h1 = self._normalize_hostname(query_hostname)
+            if not h1 or not h2:
+                return False
+            if h1 == h2:
                 return True
+
+            # Check if one is a subdomain of the other with max depth difference of 1
+            # e.g., "about.coscine.de" should match "coscine.de"
+            h1_parts = h1.split('.')
+            h2_parts = h2.split('.')
+            depth_diff = abs(len(h1_parts) - len(h2_parts))
+
+            if depth_diff == 1:
+                if h1.endswith('.' + h2) or h2.endswith('.' + h1):
+                    return True
 
         return False
 

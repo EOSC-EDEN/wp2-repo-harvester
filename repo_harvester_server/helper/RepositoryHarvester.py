@@ -159,7 +159,8 @@ class RepositoryHarvester:
         fairsharing_meta = None
         
         # 1. First pass on re3data
-        re3data_meta = re3data_harvester.harvest(self.catalog_url)
+        re3_urls = '|'.join(self.catalog_ids) # in case more than one URL is know (e.g. via redirect)
+        re3data_meta = re3data_harvester.harvest(re3_urls)
         
         # 2. Harvest FAIRsharing, using re3data's findings if available
         fairsharing_id = None
