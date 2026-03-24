@@ -12,7 +12,6 @@ CDS (Copernicus Climate Data Store);https://cds.climate.copernicus.eu/;;;
 Center for Socio-Political Data (CDSP);https://data.sciencespo.fr/dataverse/cdsp;https://data.sciencespo.fr/dataverse/cdsp;4438;
 CER - Central Repository;https://cer.ihtm.bg.ac.rs/;https://cer.ihtm.bg.ac.rs/;None;
 CERN Document Server;https://repository.cern/;;;
-CESSDA;https://www.cessda.eu/About/Consortium-and-Partners/List-of-Service-Providers;;;
 CLARIN;https://www.clarin.eu/content/national-consortia;;;
 Coscine;https://about.coscine.de/;https://about.coscine.de/;5377;RDM platform
 CROSSDA;https://www.crossda.hr/;https://www.crossda.hr/;4230;
@@ -33,7 +32,6 @@ GESIS- Leibniz Institute for the Social Science;https://www.gesis.org/en/data-se
 GFZ Data Services;https://dataservices.gfz-potsdam.de/web/;;;
 Goethe University Data Repository (GUDe);https://gude.uni-frankfurt.de/home;https://gude.uni-frankfurt.de/home;None;
 HOMEROS- Oscars Project;;https://oscars-project.eu/projects/homeros-harmonising-observations-multi-hazard-environments-research-open-science;None;project website
-ICPSR;https://www.icpsr.umich.edu/sites/icpsr/find-data;;;
 INFRA-ART Spectral Library;https://infraart.inoe.ro/;https://infraart.inoe.ro/;6329;
 INSPIRE;https://inspirehep.net/;;;
 KU Leuven RDR;https://rdr.kuleuven.be/;https://rdr.kuleuven.be/;5905;
@@ -63,3 +61,14 @@ The Qualitative Data Repository;https://qdr.syr.edu/;https://qdr.syr.edu/;2506;
 TROLLing;https://dataverse.no/dataverse/trolling;https://dataverse.no/dataverse/trolling;2929;
 UK Data Service;https://ukdataservice.ac.uk/about/;https://ukdataservice.ac.uk/about/;2502;
 World Data Center for Climate (WDCC);https://www.wdc-climate.de/ui/;https://www.wdc-climate.de/ui/;2493;FAIRsharing links to https://cera-www.dkrz.de/WDCC/ui/cerasearch/ which redirects to https://www.wdc-climate.de/ui/
+AUSSDA;https://aussda.at/;;;
+SODHA;https://www.sodha.be/;;;
+CSDA;https://archiv.soc.cas.cz/en/;;;
+FSD;https://www.fsd.tuni.fi/en/;;;
+PROGEDO;https://www.progedo.fr/en/home/;;;
+SoDaNet;http://sodanet.gr/;;;
+Tàrki;http://www.tarki.hu/eng;;;
+DATICE;https://datice.is/is;;;
+ISSDA;http://www.ucd.ie/issda/;;;
+DASSI;https://www.dassi-archive.it/;;;
+APIS;https://www.apis.ics.ulisboa.pt/;;;
