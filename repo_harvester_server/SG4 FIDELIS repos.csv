@@ -24,11 +24,11 @@ DataverseLV,https://dv.dataverse.lv/dataverse/root,https://dv.dataverse.lv/datav
 DataverseNO,https://site.uit.no/dataverseno/,https://site.uit.no/dataverseno/,2955,FAIRsharing links to https://dataverse.no/
 DataverseUA,https://opendata.nas.gov.ua/,https://opendata.nas.gov.ua/,None,
 DTU DATA,https://data.dtu.dk/,https://data.dtu.dk/,None,
-"ESGF (Earth System Grid Federation, EU Node at DKRZ)",https://esgf-metagrid.cloud.dkrz.de/search,,,
+ESGF (Earth System Grid Federation, EU Node at DKRZ),https://esgf-metagrid.cloud.dkrz.de/search,,
 Fairdata Services,https://www.fairdata.fi/,https://www.fairdata.fi/,6385,
 Finnish Social Science Data Archive,https://www.fsd.tuni.fi/en/,https://www.fsd.tuni.fi/en/,2997,
 FiVeR,https://fiver.ifvcns.rs/,https://fiver.ifvcns.rs/,None,
-GESIS- Leibniz Institute for the Social Science,https://www.gesis.org/en/data-services,https://www.gesis.org/en/data-services,None,"RDM platform, incl. repo"
+GESIS- Leibniz Institute for the Social Science,https://www.gesis.org/en/data-services,https://www.gesis.org/en/data-services,None,RDM platform, incl. repo
 GFZ Data Services,https://dataservices.gfz-potsdam.de/web/,,,
 Goethe University Data Repository (GUDe),https://gude.uni-frankfurt.de/home,https://gude.uni-frankfurt.de/home,None,
 HOMEROS- Oscars Project,,https://oscars-project.eu/projects/homeros-harmonising-observations-multi-hazard-environments-research-open-science,None,project website
@@ -38,18 +38,18 @@ KU Leuven RDR,https://rdr.kuleuven.be/,https://rdr.kuleuven.be/,5905,
 LDC (Linguistic Data Consortium),https://www.ldc.upenn.edu/,,,
 LiDA,https://lida.dataverse.lt/,https://lida.dataverse.lt/,4595,
 LINDAT CLARIAH-CZ,https://lindat.mff.cuni.cz/,https://lindat.mff.cuni.cz/,None,
-MorpheusML Model Repository,,https://morpheus.gitlab.io/,4401,"modeling and simulation environment, includes option to publish multicellular simulation models"
-myLaminin,,https://www.mylaminin.net/,None,"unclear. Commercial RDM, no obvious repo"
+MorpheusML Model Repository,,https://morpheus.gitlab.io/,4401,modeling and simulation environment, includes option to publish multicellular simulation models
+myLaminin,,https://www.mylaminin.net/,None,unclear. Commercial RDM, no obvious repo
 Ortolang,https://www.ortolang.fr/en/home/,https://www.ortolang.fr/en/home/,None,
 Oxford Brookes University Radar,https://radar.brookes.ac.uk/radar/hierarchy.do?topic=86e2c9d7-ef43-4b54-a387-3223d30acd3b,https://radar.brookes.ac.uk/radar/hierarchy.do?topic=86e2c9d7-ef43-4b54-a387-3223d30acd3b,None,
 PANGAEA,https://pangaea.de/,https://www.pangaea.de/about/,2161,"small diff between URLs, e.g. no JSON-LD on the ""about"" page, FAIRsharing links to https://www,.pangaea.de"
 PARADISEC (Pacific and Regional Archive for Digital Sources in Endangered Cultures),https://www.paradisec.org.au/,,,
 Quetelet-Progedo,https://data.progedo.fr/,https://data.progedo.fr/,6525,
-"RADaR - Digital Repository ""Sinisa Stankovic""",https://radar.ibiss.bg.ac.rs/,https://www.ibiss.bg.ac.rs/sr-yu/o-institutu/istorijat/o-institutu,None,"FIDELIS links to institute, not assoc. repo"
+"RADaR - Digital Repository ""Sinisa Stankovic""",https://radar.ibiss.bg.ac.rs/,https://www.ibiss.bg.ac.rs/sr-yu/o-institutu/istorijat/o-institutu,None,FIDELIS links to institute, not assoc. repo
 reactome,https://reactome.org/,,,
 Recherche Data Gouv France,https://recherche.data.gouv.fr/en/page/about-recherche-data-gouv,https://recherche.data.gouv.fr/en/page/about-recherche-data-gouv,None,
 RiuNet,https://upv-es.libguides.com/acceso-abierto/riunet#s-lg-box-16339192,https://upv-es.libguides.com/acceso-abierto/riunet#s-lg-box-16339192,None,
-RIVEC,https://rivec.institut-palanka.rs/,https://institut-palanka.rs/rs,None,"FIDELIS links to institute, not assoc. repo"
+RIVEC,https://rivec.institut-palanka.rs/,https://institut-palanka.rs/rs,None,FIDELIS links to institute, not assoc. repo
 RoHub,https://www.rohub.org/,https://www.rohub.org/,4119,
 Sikt Research Data Archive,https://sikt.no/en/archiving-research-data,https://sikt.no/en/about-sikt,2597,"unclear. ""government IT provider delivering national services for education and research"", but incl. Repo"
 Slovak Archive of Social Data (SASD),https://sasd.sav.sk/en/,https://sasd.sav.sk/en/,None,
@@ -72,3 +72,29 @@ DATICE,https://datice.is/is,,,
 ISSDA,http://www.ucd.ie/issda/,,,
 DASSI,https://www.dassi-archive.it/,,,
 APIS,https://www.apis.ics.ulisboa.pt/,,,
+BioModels,https://www.ebi.ac.uk/biomodels/,,1846,
+BioSamples,https://www.ebi.ac.uk/biosamples/,,1554,
+BioStudies,https://www.ebi.ac.uk/biostudies/,,2507,
+BioImage Archive,https://www.ebi.ac.uk/bioimage-archive/,,2830,
+ChEMBL,https://www.ebi.ac.uk/chembl/,,1561,
+EGA (European Genome-phenome Archive),https://ega-archive.org/,,1865,
+EMDB (Electron Microscopy Data Bank),https://www.ebi.ac.uk/emdb/,,2126,
+EMPIAR,https://www.ebi.ac.uk/empiar/,,2649,
+ENA (European Nucleotide Archive),https://www.ebi.ac.uk/ena,,1850,
+EVA (European Variation Archive),https://www.ebi.ac.uk/eva/,,2155,
+GWAS Catalog,https://www.ebi.ac.uk/gwas/,,2740,
+IntAct,https://www.ebi.ac.uk/intact/,,1599,
+LIPID MAPS,https://www.lipidmaps.org/,,2090,
+DisProt,https://disprot.org/,,1904,
+MetaboLights,https://www.ebi.ac.uk/metabolights/ ,,1711,
+ModelArchive,https://www.modelarchive.org/,,2249,
+PDBe (Protein Data Bank in Europe),https://www.ebi.ac.uk/pdbe/,,1860,
+PRIDE,https://www.ebi.ac.uk/pride/,,1863,
+Bgee,https://www.bgee.org/,,1770,
+UniProt,http://www.uniprot.org/,,2077,
+Rhea,https://www.rhea-db.org/ ,,1639,
+OMA,https://omabrowser.org/oma/home/,,,
+OrthoDB,https://www.orthodb.org/,,2080,
+Cellosaurus,https://www.cellosaurus.org/,,2348,
+Glittr,https://glittr.org,,5916,
+ArrayExpress,https://www.ebi.ac.uk/arrayexpress/,,1845,
