@@ -5,3 +5,5 @@ requests>=2.30.0
 six
 python-dateutil
 jmespath
+SPARQLWrapper
+jsonschema
