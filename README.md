@@ -4,23 +4,34 @@ Collects, aggregates, and normalizes metadata from scientific repositories (re3d
 
 ## Quick Start
 
+### Docker
+
+```bash
+docker build -t eden-harvester .
+docker run -p 8080:8080 \
+  -e FUSEKI_PATH=http://localhost:3030/service_registry_store/data \
+  -e FUSEKI_USERNAME=admin \
+  -e FUSEKI_PASSWORD=admin \
+  eden-harvester
+```
+
+### Local
+
 ```bash
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Set the necessary OS env variables: 
-* FUSEKI_USERNAME
-* FUSEKI_PASSWORD
-* FAIRSHARING_USERNAME
-* FAIRSHARING_PASSWORD
-
-```
-
-### 2. Run the Harvester Server
-
-```bash
 python main.py
 ```
+
+### Environment variables
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `FUSEKI_PATH` | Fuseki Graph Store endpoint | `http://localhost:3030/service_registry_store/data` |
+| `FUSEKI_USERNAME` | Fuseki basic auth username | — |
+| `FUSEKI_PASSWORD` | Fuseki basic auth password | — |
+| `FAIRSHARING_USERNAME` | FAIRsharing API username | — |
+| `FAIRSHARING_PASSWORD` | FAIRsharing API password | — |
 
 Then visit http://localhost:8080/ui or:
 
