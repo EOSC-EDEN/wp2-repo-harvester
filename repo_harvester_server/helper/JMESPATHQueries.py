@@ -21,6 +21,7 @@ DCAT_EXPORT_QUERY = '''
    "prov:label" : 'EDEN Catalog Service Harvester'
    },
    "foaf:primaryTopic": {
+  "@id": id,
   "@type": ['dcat:Catalog', 'foaf:Project'],
   "dct:type": resource_type || null,
   "dct:title": title,
