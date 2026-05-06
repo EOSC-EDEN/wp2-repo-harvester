@@ -34,7 +34,7 @@ DCAT_EXPORT_QUERY = '''
   "prov:hadPrimarySource" :   hadPrimarySource || null,
   "dct:description": description,
   "dct:language": language,
-  "dct:contactPoint": ([contact]||contact[])[].{
+  "dcat:contactPoint": ([contact]||contact[])[].{
       "@type": 'vcard:Kind',
       "vcard:hasTelephone": telephone || null,
       "vcard:fn": fn || null,
