@@ -6,10 +6,18 @@ DCAT_EXPORT_QUERY = '''
   "@context": {
     "dcat": 'http://www.w3.org/ns/dcat#',
     "dct":  'http://purl.org/dc/terms/',
+    "dc":  'http://purl.org/dc/terms/',
     "schema" : 'http://schema.org/',
     "vcard": 'http://www.w3.org/2006/vcard/ns#',
     "foaf": 'http://xmlns.com/foaf/0.1/',
-    "prov": 'http://www.w3.org/ns/prov#'
+    "prov": 'http://www.w3.org/ns/prov#',
+    "premis": 'http://www.loc.gov/premis/rdf/v3/',
+    "fsharing": 'http://fairsharing.org/model/fairsharing_record_schema#',
+    "dqv": 'http://www.w3.org/ns/dqv#',
+    "rdf": 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+    "rdfs": 'http://www.w3.org/2000/01/rdf-schema#',
+    "xsd": 'http://www.w3.org/2001/XMLSchema#',
+    "oa": 'http://www.w3.org/ns/oa#'
   },
    "@type": 'dcat:CatalogRecord',
    "prov:wasGeneratedBy":{
@@ -111,8 +119,8 @@ FAIRSHARING_QUERY ='''
     license: attributes.licence_links[?relation!='undefined'].licence_url || null ,
     policies: [
         attributes.metadata.data_preservation_policy.{type: 'premis:PreservationPolicy', policy_uri:url, title: name},
-        attributes.metadata.data_deposition_condition.{type: 'ex:DepositionPolicy', policy_uri:url, title: name},
-        attributes.metadata.resource_sustainability.{type: 'ex:SustainabilityPolicy', policy_uri:url, title:name}
+        attributes.metadata.data_deposition_condition.{type: 'dct:accrualPolicy', policy_uri:url, title: name},
+        attributes.metadata.resource_sustainability.{type: 'fsharing:SustainabilityPolicy', policy_uri:url, title: name}
     ]
 }
 '''
