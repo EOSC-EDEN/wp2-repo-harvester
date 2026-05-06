@@ -33,7 +33,7 @@ def GET_DISTINCT_GRAPH(graph_uri: str) -> str:
             OPTIONAL {{ ?catalog dct:license ?license }}
         
             OPTIONAL {{
-              ?catalog dct:contactPoint ?contact .
+              ?catalog dcat:contactPoint ?contact .
               OPTIONAL {{ ?contact vcard:hasEmail ?contact_email }}
               OPTIONAL {{ ?contact vcard:telephone ?contact_telephone }}
               OPTIONAL {{ ?contact vcard:url ?contact_url }}
