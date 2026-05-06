@@ -466,7 +466,7 @@ class MetadataHelper:
                     for policy_node in sg.getNodesByType(['CreativeWork', 'Policy' ,'PreservationPolicy']):
                         source_prop = policy_node.get('from_prop')
                         policy_res = jmespath.search(POLICY_INFO_QUERY, policy_node.get('graph'))
-                        if source_prop !='conformsTo':
+                        if _has_colon(source_prop): #Type can become a non colonised, or not fully qualified type, which will be interpreted by FUSEKI als local to the file and axpanded as "http://localhost..."
                             policy_res['type'].append(source_prop)
                         policies.append(policy_res)
 
@@ -509,3 +509,6 @@ class MetadataHelper:
             self.logger.error('An error occured during DCAT EXPORT: '+str(e))
 
         return clean_none(dcat)
+
+def _has_colon(s):
+    return ':' in s and not s.startswith(':')
