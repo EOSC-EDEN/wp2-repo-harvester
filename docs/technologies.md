@@ -72,7 +72,7 @@ CatalogRecord
     ├── dct:identifier       # Unique identifier
     ├── dct:description      # Repository description
     ├── dct:publisher        # foaf:Agent (name, country)
-    ├── dct:contactPoint     # vCard contact information
+    ├── dcat:contactPoint    # vCard contact information
     ├── dcat:service[]       # Array of DataService endpoints
     ├── dcat:keyword         # Subjects/themes
     ├── dct:language         # Content language
