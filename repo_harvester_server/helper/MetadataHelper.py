@@ -453,7 +453,7 @@ class MetadataHelper:
                         if service_res.get('endpoint_uri'):
                             if isinstance(service_res['endpoint_uri'], str):
                                 #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
-                                service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&")
+                                service_res['endpoint_uri'] = urllib.parse.quote(service_res['endpoint_uri'], safe=":/#?=&%")
                                 if 'SearchAction' in str(service_res.get('type')):
                                     service_res['output_format'] = 'text/html'
                                     service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
