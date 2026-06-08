@@ -158,6 +158,40 @@ class Re3DataHarvester:
         self.logger.warning(f"Could not find a verified re3data entry for query: '{query}'")
         return None
 
+    def discover_dark_archives(self):
+        """
+        Queries re3data for repositories with both closed database access and closed data
+        access — the combination that reliably identifies dark archives.
+        Uses array-style filter parameters confirmed against the live API.
+        Returns a list of dicts: [{'re3data_id': str, 'metadata': dict}, ...]
+        """
+        self.logger.info("-- Discovering dark archives from re3data (databaseAccess=closed + dataAccess=closed) --")
+        results = []
+        try:
+            resp = requests.get(
+                f"{self.api_url}/repositories",
+                params={"databaseAccess[]": "closed", "dataAccess[]": "closed"},
+                timeout=15
+            )
+            resp.raise_for_status()
+            root = etree.fromstring(resp.content)
+
+            repo_ids = [el.text for el in root.findall('.//repository/id') if el.text]
+            self.logger.info(f"Found {len(repo_ids)} dark archive candidates in re3data")
+
+            for repo_id in repo_ids:
+                metadata = self.harvest_by_id(repo_id)
+                if metadata:
+                    results.append({'re3data_id': repo_id, 'metadata': metadata})
+
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Re3data API error during dark archive discovery: {e}")
+        except etree.XMLSyntaxError as e:
+            self.logger.error(f"XML parse error during dark archive discovery: {e}")
+
+        self.logger.info(f"Successfully harvested {len(results)} dark archive records")
+        return results
+
     def harvest_by_id(self, re3data_id):
         """
         Harvests metadata directly from re3data using its re3data.orgIdentifier.
