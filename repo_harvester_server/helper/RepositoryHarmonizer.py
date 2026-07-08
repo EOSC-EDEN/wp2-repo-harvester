@@ -87,6 +87,9 @@ class RepositoryHarmonizer:
         all_graphs = self.fuseki.get_repo_graphs(self.repouri)
         if not all_graphs:
             self.logger.error('Could not find any data related to this repo in FUSEKI: {}'.format(str(self.repouri)) )
+            self.logger.warning('No FUSEKI records found to harmonize')
+
+            self.logger.info('--- Stopping Harmonization ---')
             return False
         else:
             self.logger.info('Found {} raw records related to this repo in FUSEKI: {}'.format(str(len(all_graphs.items())),str(self.repouri)))
@@ -130,6 +133,28 @@ class RepositoryHarmonizer:
         catalog_info["services"] = self.merge(service_info,
                                               merge_fields=["title", "type", "conforms_to", "output_format"],
                                               key_field="endpoint_uri", catalog_id=self.repouri)
+        # make sure services have a title:
+        # TODO: Finalize!!!!
+        ci = 0
+        for service in catalog_info["services"]:
+            new_title = service.get('type', 'Other') + ' - ' + catalog_info['title']
+            print('NEW TITLE: ', new_title)
+            # TODO: harmonize types / validate services
+            # validator status = invalid/valid, score => DQV
+            # service extra specs: no of served items etc..
+            # TODO: DQV Einbau example (Robert)
+            # DQV Dimensions: Accessibility,
+            #:downloadURLAvailabilityMetric
+            #a
+            #dqv: Metric;
+            #skos: definition "It checks if dcat:downloadURL is available and if its value is dereferenceable.
+            "@en ;
+            #dqv: inDimension ldqd: availability;
+            #dqv: expectedDataType xsd: boolean
+            sih.validate(service["endpoint_uri"])
+            #process validator results => DQV
+            ci += 0
+
         merged_catalog_dcat = self.clean_none(jmespath.search(DCAT_EXPORT_QUERY, catalog_info))
 
         if merged_catalog_dcat.get("prov:wasGeneratedBy"):

@@ -18,6 +18,8 @@ import os
 from repo_harvester_server.helper.GraphHelper import JSONGraph
 from repo_harvester_server.helper.SignPostingHelper import SignPostingHelper
 from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, POLICY_INFO_QUERY, REPO_INFO_QUERY, DCAT_EXPORT_QUERY
+from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
+
 from jsonschema import validate
 import jmespath
 import requests
@@ -43,6 +45,7 @@ class MetadataHelper:
         helper_dir = os.path.dirname(os.path.abspath(__file__))
         # Construct the absolute path to the xslt file
         #self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
+        self.service_info_helper = ServiceInfoHelper()
         self.catalog_url = catalog_url
         self.catalog_html = catalog_html
         if isinstance(self.catalog_html, str):
@@ -375,7 +378,8 @@ class MetadataHelper:
                         sitemap_services.append({
                             'endpoint_uri': m.group(1),
                             'conforms_to': 'https://www.sitemaps.org/protocol.html',
-                            'output_format': 'application/xml'
+                            'output_format': 'application/xml',
+                            'type': 'Sitemaps'
                         })
             except Exception as e:
                 self.logger.error("Sitemap metadata parsing Error: " + str(e))
@@ -398,7 +402,8 @@ class MetadataHelper:
                 'endpoint_uri' : api_link.get('link'),
                 'conforms_to' : feed_types.get(api_link.get('type')),
                 'title' : api_link.get('title'),
-                'output_format' :  api_link.get('type')
+                'output_format' :  api_link.get('type'),
+                'type': ('ATOM' if 'atom' in api_link.get('type') else 'RSS')
             })
         if services:
             metadata['services'] = services
@@ -407,11 +412,36 @@ class MetadataHelper:
             self.logger.warning('No feed service metadata found')
         return metadata
 
+    def get_opensearch_metadata(self):
+        self.logger.info('Trying to identify opensearch service metadata')
+        metadata = {}
+        services = []
+        search_links = self.signposting_helper.get_links(rel='search', type='application/opensearchdescription+xml')
+        for api_link in search_links:
+            services.append({
+                'endpoint_uri' : api_link.get('link'),
+                'conforms_to' : 'https://github.com/dewitt/opensearch/blob/master/opensearch-1-1-draft-6.md',
+                'output_format' :  'text/xml',
+                'type': 'OpenSearch'
+            })
+        if services:
+            metadata['services'] = services
+            self.logger.info('SUCCESS: Found opensearch service metadata')
+        else:
+            self.logger.warning('No opensearch service metadata found')
+        return metadata
+
     def get_fairicat_metadata(self):
         self.signposting_helper.logger.info('Trying to identify fairicat service metadata')
 
         metadata = {}
         services = []
+        fairicat_service_links = self.signposting_helper.get_links(rel='api-catalog')
+
+        # Fairicat is a service itself
+        for fairicat_link in fairicat_service_links:
+            services.append({"conforms_to":"https://signposting.org/FAIRiCat/" , "type": "FAIRiCat", "endpoint_uri"  :fairicat_link.get('link'), "title": fairicat_link.get('title'), "output_format": "application/linkset+json"})
+
         fairicat_api_links = self.signposting_helper.get_links(rel=['service-doc', 'service-meta'])
         if not fairicat_api_links:
             self.signposting_helper.logger.warning('No fairicat metadata links found')
@@ -424,20 +454,27 @@ class MetadataHelper:
             
             if api_link.get('rel') == 'service-doc':
                 grouped_services[anchor]['conforms_to'] = api_link.get('link')
-                if api_link.get('title'):
-                    grouped_services[anchor]['title'] = api_link.get('title')
+
             if api_link.get('rel') == 'service-meta':
                 grouped_services[anchor]['service_desc'] = api_link.get('link')
                 if api_link.get('type'):
                     grouped_services[anchor]['output_format'] = api_link.get('type')
+                if api_link.get('title'):
+                    grouped_services[anchor]['title'] = api_link.get('title')
+            try:
+                if grouped_services[anchor].get('conforms_to'):
+                    grouped_services[anchor]['type'] = self.service_info_helper.type(grouped_services[anchor]['conforms_to'])
+            except Exception as e:
+                print('Error while Fairicat check', e)
         
         if grouped_services:
             self.signposting_helper.logger.info('SUCCESS: Found fairicat service metadata')
             metadata['services'] = list(grouped_services.values())
+            metadata['services'].extend(services)
         return metadata
 
-    @classmethod
-    def get_jsonld_metadata_simple(cls, jstr, rootnodeID = None):
+    #@classmethod
+    def get_jsonld_metadata_simple(self, jstr, rootnodeID = None):
         # This method used the GraphHelper and JMESPATH instead of RDFlib
         metadata = {}
         if isinstance(jstr, str):
@@ -457,9 +494,13 @@ class MetadataHelper:
                                 if 'SearchAction' in str(service_res.get('type')):
                                     service_res['output_format'] = 'text/html'
                                     service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
+                                else:
+                                    stype =  self.service_info_helper.type(service_res.get('conforms_to'))
+                                    if stype:
+                                       service_res['type'] = stype
                                 services.append(service_res)
                             else:
-                                cls.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
+                                self.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))
                     if services:
                         metadata['services'] = services
 
@@ -473,7 +514,7 @@ class MetadataHelper:
                     if policies:
                         metadata['policies'] = policies
             except Exception as e:
-                cls.logger.error("JSON parse error: " + str(e))
+                self.logger.error("JSON parse error: " + str(e))
 
         return metadata
 

@@ -58,7 +58,8 @@ DCAT_EXPORT_QUERY = '''
       "dcat:endpointURL": endpoint_uri,
       "dct:conformsTo": conforms_to || null,
       "dct:title": title || null,
-      "dct:format": output_format || null
+      "dct:format": output_format || null,
+      "dct:type": type || null
   },
   "dct:conformsTo": policies[?policy_uri].{
   "@id": policy_uri,
@@ -93,7 +94,7 @@ license: license.url ||license."@id" || license.id || license.name || license ||
 # a jmespath query to retrieve service info in graphs containing WebAPI, Service or similar objects
 SERVICE_INFO_QUERY  = '''{
 endpoint_uri : url || target.urlTemplate || target.url || target || endpointURL || landingPage || null,
-type : "@type",
+type : type || "@type",
 title : title || name || null,
 output_format: serviceOutput.identifier || mediaType || null,
 conforms_to: documentation || conformsTo

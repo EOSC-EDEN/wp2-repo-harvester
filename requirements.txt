@@ -6,4 +6,5 @@ six
 python-dateutil
 jmespath
 SPARQLWrapper
+SPARQLWrapper
 jsonschema

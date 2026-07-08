@@ -18,9 +18,7 @@ from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
-
-from repo_harvester_server.config import FUSEKI_PATH
-from repo_harvester_server.helper.SPARQLQueries import GET_ALL_GRAPHS
+from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 class RepositoryHarvester:
     logger = logging.getLogger('RepositoryHarvester')
@@ -45,10 +43,12 @@ class RepositoryHarvester:
         self.catalog_url = catalog_url
         self.catalog_html = None
         self.metadata = []
+        self.dcats = []
         self.metadata_helper = None
         self.catalog_ids = [self.catalog_url]
-
         self.check_environment_variables()
+
+        self.service_helper = ServiceInfoHelper()
 
         self.fuseki = FUSEKIHelper()
 
@@ -75,6 +75,7 @@ class RepositoryHarvester:
             self.logger.info('Catalog URL harvested: '+ self.catalog_url)
         except requests.exceptions.RequestException as e:
             self.logger.error("Failed to fetch URI: %s", self.catalog_url)
+
 
     def check_environment_variables(self):
         # to sucessfully perform the harvesting we need the FAIRsharing credentials as ENV variables
@@ -143,7 +144,8 @@ class RepositoryHarvester:
             self.harvest_registry_metadata()
         # 3. final step: harmonize all records and save resulting graph in FUSEKI
         harvested_records = self.export_and_save(True)
-        self.harmonize()
+        h = self.harmonize()
+        print(json.dumps(h, indent=2))
         return harvested_records
 
     def harvest_registry_metadata(self):
@@ -201,6 +203,7 @@ class RepositoryHarvester:
     def harmonize(self):
         h = RepositoryHarmonizer(self.catalog_url)
         harmonized_info = h.harmonize()
+        return harmonized_info
 
     def harvest_self_hosted_metadata(self):
         """
@@ -224,6 +227,7 @@ class RepositoryHarvester:
                 self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
             self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
             self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
+            self.merge_metadata(self.metadata_helper.get_opensearch_metadata(), 'open_search')
             self.merge_metadata(self.metadata_helper.get_sitemap_service_metadata(), 'sitemap_service')
             self.logger.info("--- Finished Self-Hosted Harvesting ---")
         except Exception as e:

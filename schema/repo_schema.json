@@ -5,6 +5,7 @@
 
   "properties": {
     "title": {},
+    "identifier": {},
     "resource_type": {},
     "publisher": {},
     "description": {},

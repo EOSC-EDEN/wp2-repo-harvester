@@ -8,6 +8,8 @@ import os
 import csv
 import logging
 from repo_harvester_server.data.country_codes import country_codes_3
+from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,9 +24,11 @@ class Re3DataHarvester:
     def __init__(self):
         self.api_url = "https://www.re3data.org/api/beta"
         self.ns = {"r3d": "http://www.re3data.org/schema/2-2"}
-        self.service_mappings = self._load_service_mappings()
+        self.service_helper = ServiceInfoHelper()
 
-    def _load_service_mappings(self):
+        #self.service_mappings = self._load_service_mappings()
+
+    '''def _load_service_mappings(self):
         """Loads the service mappings from the CSV file."""
         mappings = {}
         csv_path = os.path.join(os.path.dirname(__file__), '..', 'services_default_queries.csv')
@@ -36,7 +40,7 @@ class Re3DataHarvester:
                         mappings[row['Acronym']] = row['URI']
         except FileNotFoundError:
             self.logger.warning(f"Warning: Service mapping file not found at {csv_path}")
-        return mappings
+        return mappings'''
 
     def harvest(self, catalog_url):
         """
@@ -229,9 +233,10 @@ class Re3DataHarvester:
             if api_url:
                 services.append({
                     'endpoint_uri': api_url,
-                    'type': f"re3data:API:{api_type}" if api_type else "re3data:API",
-                    'conforms_to': self.service_mappings.get(api_type),
-                    'title': f"{api_type} API" if api_type else "API Service"
+                    #'title': f"re3data:API:{api_type}",
+                    'conforms_to': self.service_helper.conforms_to(api_type),
+                    'type': self.service_helper.type(api_type)
+                    #'title': f"{api_type} API" if api_type else "API Service"
                 })
         for syndication_elem in repo_root.findall(".//r3d:syndication", self.ns):
             syndication_type = syndication_elem.get('syndicationType')
@@ -239,9 +244,11 @@ class Re3DataHarvester:
             if syndication_url:
                 services.append({
                     'endpoint_uri': syndication_url,
-                    'type': f"re3data:Syndication:{syndication_type}" if syndication_type else "re3data:Syndication",
-                    'conforms_to': self.service_mappings.get(syndication_type),
-                    'title': f"{syndication_type} Feed" if syndication_type else "Syndication Feed"
+                    #'title': f"re3data:Syndication:{syndication_type}",
+                    'conforms_to': self.service_helper.conforms_to(syndication_type),
+                    'type': self.service_helper.type(syndication_type),
+                    #'conforms_to': self.service_mappings.get(syndication_type),
+                    #'title': f"{syndication_type}" if syndication_type else "Feed"
                 })
         
         # --- Identifier Extraction (Handles Multiple) ---
