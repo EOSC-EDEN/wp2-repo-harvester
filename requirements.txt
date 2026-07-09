@@ -6,5 +6,5 @@ six
 python-dateutil
 jmespath
 SPARQLWrapper
-SPARQLWrapper
 jsonschema
+eden-service-validator @ git+https://github.com/EOSC-EDEN/wp2-service-validator.git@v0.1.0

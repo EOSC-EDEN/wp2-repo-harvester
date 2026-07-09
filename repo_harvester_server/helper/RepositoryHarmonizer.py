@@ -12,6 +12,7 @@ from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 from repo_harvester_server.helper.JMESPATHQueries import DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.GraphHelper import JSONGraph
+from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 import logging
 
@@ -133,27 +134,9 @@ class RepositoryHarmonizer:
         catalog_info["services"] = self.merge(service_info,
                                               merge_fields=["title", "type", "conforms_to", "output_format"],
                                               key_field="endpoint_uri", catalog_id=self.repouri)
-        # make sure services have a title:
-        # TODO: Finalize!!!!
-        ci = 0
-        for service in catalog_info["services"]:
-            new_title = service.get('type', 'Other') + ' - ' + catalog_info['title']
-            print('NEW TITLE: ', new_title)
-            # TODO: harmonize types / validate services
-            # validator status = invalid/valid, score => DQV
-            # service extra specs: no of served items etc..
-            # TODO: DQV Einbau example (Robert)
-            # DQV Dimensions: Accessibility,
-            #:downloadURLAvailabilityMetric
-            #a
-            #dqv: Metric;
-            #skos: definition "It checks if dcat:downloadURL is available and if its value is dereferenceable.
-            "@en ;
-            #dqv: inDimension ldqd: availability;
-            #dqv: expectedDataType xsd: boolean
-            sih.validate(service["endpoint_uri"])
-            #process validator results => DQV
-            ci += 0
+        # Titles + DQV validation as a separate stage, keeping live endpoint
+        # checks out of the merge logic above (still one write per harvest run).
+        self.enrich_services_with_validation(catalog_info)
 
         merged_catalog_dcat = self.clean_none(jmespath.search(DCAT_EXPORT_QUERY, catalog_info))
 
@@ -168,6 +151,27 @@ class RepositoryHarmonizer:
         self.logger.info('--- Finished Harmonization ---')
 
         return merged_catalog_dcat
+
+    def enrich_services_with_validation(self, catalog_info):
+        """Give each harmonized service a title, live-validate its endpoint and
+        attach DQV QualityMeasurement nodes. Runs as its own stage so the live
+        HTTP checks stay out of harmonize()'s merge logic. Failures on a single
+        endpoint never abort harmonization (see ServiceInfoHelper.validate)."""
+        sih = ServiceInfoHelper()
+        for service in catalog_info.get("services", []):
+            if not service.get("title"):
+                stype = service.get("type") or "Service"
+                if isinstance(stype, list):
+                    stype = stype[0] if stype else "Service"
+                service["title"] = "{} - {}".format(stype, catalog_info.get("title", ""))
+            measurements = sih.validate(
+                service.get("endpoint_uri"),
+                expected_type=service.get("type"),
+                conforms_to=service.get("conforms_to"),
+                service_title=service.get("title"),
+            )
+            if measurements:
+                service["dqv_measurements"] = measurements
 
     def merge(self, records, merge_fields, key_field, catalog_id):
         """

@@ -14,6 +14,8 @@ DCAT_EXPORT_QUERY = '''
     "premis": 'http://www.loc.gov/premis/rdf/v3/',
     "fsharing": 'http://fairsharing.org/model/fairsharing_record_schema#',
     "dqv": 'http://www.w3.org/ns/dqv#',
+    "ldqd": 'http://www.w3.org/2016/05/ldqd#',
+    "skos": 'http://www.w3.org/2004/02/skos/core#',
     "rdf": 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
     "rdfs": 'http://www.w3.org/2000/01/rdf-schema#',
     "xsd": 'http://www.w3.org/2001/XMLSchema#',
@@ -59,7 +61,8 @@ DCAT_EXPORT_QUERY = '''
       "dct:conformsTo": conforms_to || null,
       "dct:title": title || null,
       "dct:format": output_format || null,
-      "dct:type": type || null
+      "dct:type": type || null,
+      "dqv:hasQualityMeasurement": dqv_measurements || null
   },
   "dct:conformsTo": policies[?policy_uri].{
   "@id": policy_uri,
