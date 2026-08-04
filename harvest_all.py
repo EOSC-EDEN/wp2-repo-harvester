@@ -20,6 +20,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
+from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 
 # Configuration
@@ -59,12 +60,15 @@ def make_safe_filename(name):
     return safe_name if safe_name else "unnamed_repo"
 
 
-def harvest_repository(url, name):
+def harvest_repository(url, name, run_id=None):
     """
     Harvest a single repository and return results in the standard format.
     Returns (success, result_dict)
+
+    run_id ties this repository's DQV measurements to the batch-wide validation
+    run, so all graphs of one harvest share a single prov:Activity.
     """
-    harvester = RepositoryHarvester(url)
+    harvester = RepositoryHarvester(url, run_id=run_id)
     exported_records = harvester.harvest()
 
     # Collect all services from all exported records (same logic as controller)
@@ -178,8 +182,12 @@ def main():
 
     # Start harvesting
     start_time = datetime.now()
+    # One validation run for the whole batch: every harmonized graph written below
+    # points its DQV measurements at this same prov:Activity.
+    run_id = ServiceInfoHelper.mint_run_id()
     print(f"\n{'='*60}")
     print(f"FIDELIS Repository Harvest - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Validation run: {run_id}")
     print(f"{'='*60}")
 
     results = {
@@ -196,7 +204,7 @@ def main():
         print(f"    URL: {url}")
 
         try:
-            result = harvest_repository(url, name)
+            result = harvest_repository(url, name, run_id=run_id)
 
             # Save to file
             safe_name = make_safe_filename(name)

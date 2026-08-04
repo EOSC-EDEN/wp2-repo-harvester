@@ -39,8 +39,11 @@ class RepositoryHarvester:
     }
 
 
-    def __init__(self, catalog_url):
+    def __init__(self, catalog_url, run_id=None):
         self.catalog_url = catalog_url
+        # One validation run per harvester unless the caller shares one across
+        # repositories (harvest_all does; a single API request is its own run).
+        self.run_id = run_id or ServiceInfoHelper.mint_run_id()
         self.catalog_html = None
         self.metadata = []
         self.dcats = []
@@ -201,7 +204,7 @@ class RepositoryHarvester:
         self.logger.info("--- Finished Registry Harvesting ---")
 
     def harmonize(self):
-        h = RepositoryHarmonizer(self.catalog_url)
+        h = RepositoryHarmonizer(self.catalog_url, run_id=self.run_id)
         harmonized_info = h.harmonize()
         return harmonized_info
 

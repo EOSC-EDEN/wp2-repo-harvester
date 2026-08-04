@@ -4,6 +4,14 @@ import logging
 import os
 from datetime import datetime, timezone
 
+try:  # stdlib since 3.8; guarded so a source checkout without dist metadata still runs
+    from importlib.metadata import PackageNotFoundError, version as _dist_version
+except ImportError:  # pragma: no cover
+    PackageNotFoundError = Exception
+
+    def _dist_version(_name):
+        raise PackageNotFoundError
+
 from eden_validator import ServiceValidator  # Jens' service-validator package (pinned in requirements.txt)
 
 logging.basicConfig(
@@ -39,6 +47,33 @@ VALIDATION_SCORE_METRIC = {
     "dqv:expectedDataType": {"@id": "xsd:decimal"},
 }
 
+# --- PROV provenance --------------------------------------------------------
+# Who produced a measurement (agent) and in which run (activity). Note rdfs:label,
+# not prov:label: PROV-DM lists prov:label as a reserved *attribute* of the abstract
+# model, but PROV-O 3.1 encodes it as rdfs:label and defines no prov:label property.
+# Like the metric definitions above, both nodes are inlined on every measurement --
+# same @id means JSON-LD merges them into one RDF node, which keeps each harmonized
+# graph self-describing for the per-graph Fuseki->Elastic exporter.
+VALIDATOR_AGENT_URI = "eden://validator"
+RUN_URI_PREFIX = "eden://validator/run/"
+_RUN_ID_FORMAT = "%Y%m%dT%H%M%SZ"
+
+
+def _validator_agent():
+    """The eden-service-validator as a prov:SoftwareAgent. The version is read from
+    the installed distribution so it tracks the pin in requirements.txt instead of
+    drifting; in a source checkout without dist metadata the key is simply omitted."""
+    agent = {
+        "@id": VALIDATOR_AGENT_URI,
+        "@type": "prov:SoftwareAgent",
+        "rdfs:label": "EDEN Service Validator",
+    }
+    try:
+        agent["schema:softwareVersion"] = _dist_version("eden-service-validator")
+    except PackageNotFoundError:
+        pass
+    return agent
+
 
 class ServiceInfoHelper(object):
     logger = logging.getLogger('ServiceInfoHelper')
@@ -72,7 +107,39 @@ class ServiceInfoHelper(object):
             return value[0] if value else None
         return value
 
-    def validate(self, endpoint_uri, expected_type=None, conforms_to=None, service_title=None):
+    @staticmethod
+    def mint_run_id():
+        """Identify one validation run. harvest_all mints this once and passes it to
+        every repository, so all graphs of a batch share one prov:Activity; the API
+        controller lets it default per RepositoryHarvester, since a single-repo
+        request genuinely is its own run."""
+        return datetime.now(timezone.utc).strftime(_RUN_ID_FORMAT)
+
+    @staticmethod
+    def _run_activity(run_id):
+        """The prov:Activity node for a run, inlined on every measurement.
+
+        prov:startedAtTime rather than endedAtTime: the run URI is minted when the
+        run starts and the per-repository graphs are written while it is still in
+        progress, so the end time is not knowable here. Deriving the timestamp from
+        run_id also keeps every inlined copy byte-identical -- divergent values under
+        one @id would emit conflicting triples instead of merging into one node."""
+        activity = {
+            "@id": RUN_URI_PREFIX + run_id,
+            "@type": "prov:Activity",
+            "rdfs:label": "EDEN service validation run",
+            "prov:wasAssociatedWith": _validator_agent(),
+        }
+        try:
+            started = datetime.strptime(run_id, _RUN_ID_FORMAT).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return activity  # caller-supplied id in another shape; skip the timestamp
+        activity["prov:startedAtTime"] = {
+            "@value": started.isoformat(), "@type": "xsd:dateTime"}
+        return activity
+
+    def validate(self, endpoint_uri, expected_type=None, conforms_to=None, service_title=None,
+                 run_id=None):
         """Live-validate one service endpoint and return DQV QualityMeasurement
         nodes (JSON-LD dicts) to hang off the dcat:DataService via
         dqv:hasQualityMeasurement. Returns [] when there is nothing to validate
@@ -89,33 +156,41 @@ class ServiceInfoHelper(object):
         except Exception as e:
             self.logger.warning('Validation failed for %s: %s', endpoint_uri, str(e))
             return []
-        return self._to_dqv(endpoint_uri, result)
+        return self._to_dqv(endpoint_uri, result, run_id=run_id)
 
     @staticmethod
-    def _to_dqv(endpoint_uri, result):
-        """Map a validator result dict into DQV QualityMeasurement nodes."""
+    def _to_dqv(endpoint_uri, result, run_id=None):
+        """Map a validator result dict into DQV QualityMeasurement nodes. Without a
+        run_id the measurements carry no prov:wasGeneratedBy at all, rather than
+        half-formed provenance pointing at an invented run."""
         generated_at = datetime.now(timezone.utc).isoformat()
         stamp = hashlib.sha1(endpoint_uri.encode('utf-8')).hexdigest()[:12]
+        # One shared dict per call: identical inlined copies merge into one RDF node.
+        activity = ServiceInfoHelper._run_activity(run_id) if run_id else None
+
+        def measurement(suffix, metric, value):
+            node = {
+                "@id": "eden://validator/measurement/{}-{}".format(stamp, suffix),
+                "@type": "dqv:QualityMeasurement",
+                "dqv:isMeasurementOf": metric,
+                "dqv:computedOn": {"@id": endpoint_uri},
+                "dqv:value": value,
+                "prov:generatedAtTime": {"@value": generated_at, "@type": "xsd:dateTime"},
+            }
+            if activity:
+                node["prov:wasGeneratedBy"] = activity
+            return node
+
         measurements = []
         if result.get('valid') is not None:
-            measurements.append({
-                "@id": "eden://validator/measurement/{}-valid".format(stamp),
-                "@type": "dqv:QualityMeasurement",
-                "dqv:isMeasurementOf": ENDPOINT_AVAILABILITY_METRIC,
-                "dqv:computedOn": {"@id": endpoint_uri},
-                "dqv:value": {"@value": str(bool(result['valid'])).lower(), "@type": "xsd:boolean"},
-                "prov:generatedAtTime": {"@value": generated_at, "@type": "xsd:dateTime"},
-            })
+            measurements.append(measurement(
+                'valid', ENDPOINT_AVAILABILITY_METRIC,
+                {"@value": str(bool(result['valid'])).lower(), "@type": "xsd:boolean"}))
         score = result.get('score')
         if isinstance(score, (int, float)):
-            measurements.append({
-                "@id": "eden://validator/measurement/{}-score".format(stamp),
-                "@type": "dqv:QualityMeasurement",
-                "dqv:isMeasurementOf": VALIDATION_SCORE_METRIC,
-                "dqv:computedOn": {"@id": endpoint_uri},
-                "dqv:value": {"@value": "{:.1f}".format(score), "@type": "xsd:decimal"},
-                "prov:generatedAtTime": {"@value": generated_at, "@type": "xsd:dateTime"},
-            })
+            measurements.append(measurement(
+                'score', VALIDATION_SCORE_METRIC,
+                {"@value": "{:.1f}".format(score), "@type": "xsd:decimal"}))
         return measurements
 
     def type(self, name_or_url):

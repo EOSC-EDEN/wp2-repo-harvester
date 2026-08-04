@@ -25,8 +25,9 @@ logging.basicConfig(
 class RepositoryHarmonizer:
     logger = logging.getLogger('RepositoryHarmonizer')
 
-    def __init__(self, repouri):
+    def __init__(self, repouri, run_id=None):
         self.repouri = repouri
+        self.run_id = run_id  # identifies the validation run in the DQV provenance
         self.fuseki = FUSEKIHelper()
 
     def clean_none(self, obj):
@@ -169,6 +170,7 @@ class RepositoryHarmonizer:
                 expected_type=service.get("type"),
                 conforms_to=service.get("conforms_to"),
                 service_title=service.get("title"),
+                run_id=self.run_id,
             )
             if measurements:
                 service["dqv_measurements"] = measurements
