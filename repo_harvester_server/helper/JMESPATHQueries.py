@@ -28,7 +28,7 @@ DCAT_EXPORT_QUERY = '''
    },
    "prov:wasAssociatedWith":{
    "@type": 'prov:SoftwareAgent',
-   "prov:label" : 'EDEN Catalog Service Harvester'
+   "rdfs:label" : 'EDEN Catalog Service Harvester'
    },
    "foaf:primaryTopic": {
   "@id": id,
