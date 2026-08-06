@@ -274,7 +274,7 @@ class RepositoryHarvester:
 
                     if 'prov:wasGeneratedBy' in export_record:
                         export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
-                        export_record['prov:wasGeneratedBy']['prov:name'] = self.extractors.get(source, "Unknown Harvester")
+                        export_record['prov:wasGeneratedBy']['rdfs:label'] = self.extractors.get(source, "Unknown Harvester")
                         export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
 
                     if 'foaf:primaryTopic' in export_record:

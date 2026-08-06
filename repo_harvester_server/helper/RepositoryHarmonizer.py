@@ -142,7 +142,7 @@ class RepositoryHarmonizer:
         merged_catalog_dcat = self.clean_none(jmespath.search(DCAT_EXPORT_QUERY, catalog_info))
 
         if merged_catalog_dcat.get("prov:wasGeneratedBy"):
-            merged_catalog_dcat["prov:wasGeneratedBy"]["prov:name"] = 'Metadata harmonizing activity'
+            merged_catalog_dcat["prov:wasGeneratedBy"]["rdfs:label"] = 'Metadata harmonizing activity'
         merged_uri = f"eden://harvester/harmonized/"+str(self.repouri)
         merged_catalog_dcat["@id"] = merged_uri
 

@@ -24,9 +24,10 @@ DCAT_EXPORT_QUERY = '''
    "@type": 'dcat:CatalogRecord',
    "prov:wasGeneratedBy":{
        "@type": 'prov:Activity',
-       "prov:name": 'Metadata harvesting and extraction activity'
+       "rdfs:label": 'Metadata harvesting and extraction activity'
    },
    "prov:wasAssociatedWith":{
+   "@id": 'eden://harvester',
    "@type": 'prov:SoftwareAgent',
    "rdfs:label" : 'EDEN Catalog Service Harvester'
    },
