@@ -29,6 +29,10 @@ class RepositoryHarmonizer:
         self.repouri = repouri
         self.run_id = run_id  # identifies the validation run in the DQV provenance
         self.fuseki = FUSEKIHelper()
+        # True once the harmonized graph was actually written to FUSEKI —
+        # the record itself only ever lives there, so this is the one flag
+        # that says whether the pipeline's end product exists.
+        self.persisted = False
 
     def clean_none(self, obj):
         """
@@ -147,7 +151,10 @@ class RepositoryHarmonizer:
         merged_catalog_dcat["@id"] = merged_uri
 
         # save harmonized record in FUSEKI
-        self.fuseki.save(merged_uri,json.dumps(merged_catalog_dcat))
+        saved_triples = self.fuseki.save(merged_uri, json.dumps(merged_catalog_dcat))
+        self.persisted = saved_triples is not None
+        if not self.persisted:
+            self.logger.warning('Harmonized record was NOT persisted to FUSEKI: %s', merged_uri)
 
         self.logger.info('--- Finished Harmonization ---')
 

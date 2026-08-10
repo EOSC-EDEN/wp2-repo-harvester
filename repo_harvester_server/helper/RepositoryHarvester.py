@@ -49,6 +49,11 @@ class RepositoryHarvester:
         self.dcats = []
         self.metadata_helper = None
         self.catalog_ids = [self.catalog_url]
+        # Per-stage outcome flags, filled in by harvest()/harmonize(). A repo
+        # can legitimately be harvested but not harmonized (empty store on a
+        # first run), so callers report the stages separately.
+        self.harmonized_ok = False
+        self.persisted_ok = False
         self.check_environment_variables()
 
         self.service_helper = ServiceInfoHelper()
@@ -147,8 +152,11 @@ class RepositoryHarvester:
             self.harvest_registry_metadata()
         # 3. final step: harmonize all records and save resulting graph in FUSEKI
         harvested_records = self.export_and_save(True)
-        h = self.harmonize()
-        print(json.dumps(h, indent=2))
+        harmonized = self.harmonize()
+        if not harmonized:
+            self.logger.warning("Harmonization produced no record for %s", self.catalog_url)
+        elif not self.persisted_ok:
+            self.logger.warning("Harmonized record for %s was NOT persisted to FUSEKI", self.catalog_url)
         return harvested_records
 
     def harvest_registry_metadata(self):
@@ -206,6 +214,8 @@ class RepositoryHarvester:
     def harmonize(self):
         h = RepositoryHarmonizer(self.catalog_url, run_id=self.run_id)
         harmonized_info = h.harmonize()
+        self.harmonized_ok = bool(harmonized_info)
+        self.persisted_ok = h.persisted
         return harmonized_info
 
     def harvest_self_hosted_metadata(self):

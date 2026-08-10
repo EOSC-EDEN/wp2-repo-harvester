@@ -15,12 +15,57 @@ logging.basicConfig(
 )
 # some methods to check and clean the FUSEKI store
 
+class FusekiAuthError(Exception):
+    """FUSEKI is unreachable or rejected the configured credentials.
+
+    Raised by the helper layer only; never turned into sys.exit() inside
+    repo_harvester_server/ so the connexion API keeps running (callers such
+    as harvest_all.py decide the exit code).
+    """
+
+
 class FUSEKIHelper:
     logger = logging.getLogger('FUSEKIHelper')
 
     def __init__(self):
         self.FUSEKI_USERNAME = os.environ.get('FUSEKI_USERNAME')
         self.FUSEKI_PASSWORD = os.environ.get('FUSEKI_PASSWORD')
+
+    def check_connection(self):
+        """
+        Probe FUSEKI with a single authenticated ASK query against the query
+        endpoint. Catches wrong credentials, which an env-var presence check
+        cannot. Returns cleanly on success, raises FusekiAuthError otherwise.
+        """
+        endpoint = str(FUSEKI_PATH).replace('/data', '/query')
+        if not self.FUSEKI_USERNAME or not self.FUSEKI_PASSWORD:
+            raise FusekiAuthError(
+                "FUSEKI credentials are not set: define the FUSEKI_USERNAME and "
+                "FUSEKI_PASSWORD environment variables before running "
+                f"(endpoint: {endpoint})."
+            )
+        try:
+            response = requests.get(
+                endpoint,
+                params={'query': 'ASK {}'},
+                auth=HTTPBasicAuth(self.FUSEKI_USERNAME, self.FUSEKI_PASSWORD),
+                timeout=10,
+            )
+        except requests.exceptions.RequestException as e:
+            raise FusekiAuthError(
+                f"Cannot reach FUSEKI at {endpoint}: {e}"
+            )
+        if response.status_code in (401, 403):
+            raise FusekiAuthError(
+                f"FUSEKI at {endpoint} rejected the credentials "
+                f"(HTTP {response.status_code}). Check the FUSEKI_USERNAME and "
+                "FUSEKI_PASSWORD environment variables."
+            )
+        if response.status_code != 200:
+            raise FusekiAuthError(
+                f"FUSEKI probe at {endpoint} failed with HTTP {response.status_code}."
+            )
+        self.logger.info("FUSEKI connection check OK: %s", endpoint)
 
 
     def get_repo_graphs(self, repouri):
