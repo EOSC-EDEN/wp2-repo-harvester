@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
+from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper, FusekiAuthError
 
 
 # Configuration
@@ -62,8 +63,10 @@ def make_safe_filename(name):
 
 def harvest_repository(url, name, run_id=None):
     """
-    Harvest a single repository and return results in the standard format.
-    Returns (success, result_dict)
+    Harvest a single repository.
+    Returns (result_dict, stages) where stages holds the per-stage outcome:
+    'harvested' (records were exported), 'harmonized' (merged record built)
+    and 'persisted' (harmonized graph written to FUSEKI).
 
     run_id ties this repository's DQV measurements to the batch-wide validation
     run, so all graphs of one harvest share a single prov:Activity.
@@ -98,7 +101,30 @@ def harvest_repository(url, name, run_id=None):
         "services": all_services
     }
 
-    return result
+    stages = {
+        'harvested': bool(exported_records),
+        'harmonized': harvester.harmonized_ok,
+        'persisted': harvester.persisted_ok,
+    }
+
+    return result, stages
+
+
+def build_summary(total, results, start_time, duration):
+    """Build the _harvest_summary.json dict, including per-stage counts."""
+    harmonized_count = sum(1 for r in results['success'] if r.get('harmonized'))
+    persisted_count = sum(1 for r in results['success'] if r.get('persisted'))
+    return {
+        'timestamp': start_time.isoformat(),
+        'duration_seconds': duration.total_seconds(),
+        'total': total,
+        'success_count': len(results['success']),
+        'failed_count': len(results['failed']),
+        'harmonized_count': harmonized_count,
+        'persisted_count': persisted_count,
+        'success': results['success'],
+        'failed': results['failed']
+    }
 
 
 def main():
@@ -175,6 +201,20 @@ def main():
         print(f"\nTotal: {len(repos)} repositories")
         sys.exit(0)
 
+    # Probe FUSEKI once before any harvesting: catches wrong credentials,
+    # which an env-var presence check cannot. A failed probe does NOT stop
+    # the run — harvesting works without the store and its results are kept
+    # locally — but the run must say up front (and in the verdict) that
+    # nothing can be harmonized or persisted.
+    fuseki_ok = True
+    try:
+        FUSEKIHelper().check_connection()
+    except FusekiAuthError as e:
+        fuseki_ok = False
+        print(f"\nWARNING: {e}")
+        print("Continuing without FUSEKI: harvest results will be saved locally only.")
+        print("Nothing can be harmonised or persisted to the registry store this run.")
+
     # Create output directory
     output_dir = args.output_dir
     if not os.path.exists(output_dir):
@@ -204,7 +244,7 @@ def main():
         print(f"    URL: {url}")
 
         try:
-            result = harvest_repository(url, name, run_id=run_id)
+            result, stages = harvest_repository(url, name, run_id=run_id)
 
             # Save to file
             safe_name = make_safe_filename(name)
@@ -220,12 +260,17 @@ def main():
 
             print(f"    OK: Saved to {filepath}")
             print(f"        Metadata: {'Yes' if has_metadata else 'No'}, Services: {service_count}")
+            print(f"        Harmonized: {'Yes' if stages['harmonized'] else 'NO'}, "
+                  f"Persisted to FUSEKI: {'Yes' if stages['persisted'] else 'NO'}")
 
             results['success'].append({
                 'name': name,
                 'url': url,
                 'file': filepath,
-                'services': service_count
+                'services': service_count,
+                'harvested': stages['harvested'],
+                'harmonized': stages['harmonized'],
+                'persisted': stages['persisted']
             })
 
         except Exception as e:
@@ -252,22 +297,50 @@ def main():
         for item in results['failed']:
             print(f"  - {item['name']}: {item['error']}")
 
+    harmonized = [r for r in results['success'] if r.get('harmonized')]
+    not_harmonized = [r for r in results['success'] if not r.get('harmonized')]
+    persisted = [r for r in results['success'] if r.get('persisted')]
+
+    print(f"\n{'='*60}")
+    print("HARMONISATION SUMMARY")
+    print(f"{'='*60}")
+    print(f"Harmonized:           {len(harmonized)}")
+    print(f"Persisted to FUSEKI:  {len(persisted)}")
+    print(f"Not harmonized:       {len(not_harmonized)}")
+    if not_harmonized:
+        print("\n--- Harvested but NOT harmonized ---")
+        for item in not_harmonized:
+            print(f"  - {item['name']}")
+
     # Save summary report
     summary_file = os.path.join(output_dir, '_harvest_summary.json')
-    summary = {
-        'timestamp': start_time.isoformat(),
-        'duration_seconds': duration.total_seconds(),
-        'total': len(repos),
-        'success_count': len(results['success']),
-        'failed_count': len(results['failed']),
-        'success': results['success'],
-        'failed': results['failed']
-    }
+    summary = build_summary(len(repos), results, start_time, duration)
     with open(summary_file, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2)
     print(f"\nSummary saved to: {summary_file}")
 
     print(f"\nOutput directory: {output_dir}")
+
+    # Final verdict: the harvested JSON files are intermediates — the run's
+    # end product is the harmonized record in FUSEKI. Say plainly whether it
+    # was produced, and give cron/CI a truthful exit code.
+    if not persisted:
+        print("\nVERDICT: LOCAL ONLY - nothing was persisted to FUSEKI.")
+        if not fuseki_ok:
+            print("FUSEKI could not be reached with the given credentials, so the harvest")
+            print("results were saved locally only and nothing could be harmonised.")
+            print("Fix FUSEKI_USERNAME / FUSEKI_PASSWORD and re-run to populate the store.")
+        else:
+            print("The harvested JSON files in the output directory are intact, but the")
+            print("registry store was not updated. Likely cause: wrong or missing")
+            print("FUSEKI_USERNAME / FUSEKI_PASSWORD.")
+        sys.exit(1)
+    elif not_harmonized or results['failed']:
+        print(f"\nVERDICT: PARTIAL - {len(persisted)} of {len(repos)} repositories "
+              "harmonized and persisted; see the summaries above for the rest.")
+    else:
+        print(f"\nVERDICT: OK - all {len(persisted)} repositories harvested, "
+              "harmonized and persisted.")
     print("Done!")
 
 
