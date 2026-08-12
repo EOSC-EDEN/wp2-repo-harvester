@@ -21,20 +21,30 @@ logging.basicConfig(
 
 logger = logging.getLogger('RegistryHTTP')
 
-# Proactive pacing between registry requests, in seconds.
+# Proactive pacing before each registry request, in seconds, per registry.
 #
-# Measured from the batch of 2026-08-12: FAIRsharing's limiter behaves like a
-# rolling one-minute budget of roughly a dozen requests, not a rate cap. That run
-# tripped it while averaging 0.24 requests/second - twenty times slower than the
-# 5 req/s their own MCP client self-paces at - then answered normally for ~a
-# minute, then tripped again, in eight bursts. Reactive backoff cannot win
-# against a window that long: 1+2+4 seconds of retrying lands inside the same
-# exhausted budget, which is why 21 of 28 rate-limited repositories exhausted
-# their retries and were reported degraded.
+# Keyed by registry because the limits are not shared. FAIRsharing's limiter
+# behaves like a rolling one-minute budget of roughly a dozen requests, not a
+# rate cap: the batch of 2026-08-12 tripped it while averaging 0.24 requests/second
+# - twenty times slower than the 5 req/s their own MCP client self-paces at - then
+# answered normally for about a minute, then tripped again, in eight bursts.
+# Reactive backoff cannot win against a window that long: 1+2+4 seconds of retrying
+# lands inside the same exhausted budget, which is why 21 of 28 rate-limited
+# repositories exhausted their retries and were reported degraded. Pacing at 5s
+# holds us near 12 requests/minute and took that run to zero degraded records.
 #
-# 5s holds us near 12 requests/minute. The figure is inferred from one run, not
-# documented by FAIRsharing, so re-measure after a batch and adjust.
-REQUEST_DELAY_SECONDS = 5.0
+# re3data is deliberately absent: it has never rate-limited us in any run. Pacing
+# it alongside FAIRsharing cost 13 minutes of a 33-minute batch for no benefit.
+#
+# The 5s is inferred from one run, not documented by FAIRsharing. Re-measure after
+# a batch and adjust.
+REQUEST_DELAY_SECONDS = {
+    'fairsharing': 5.0,
+}
+
+# Registries we have not measured are not paced: inventing a delay would slow
+# every batch down on no evidence.
+DEFAULT_REQUEST_DELAY_SECONDS = 0.0
 
 # Never honour a Retry-After longer than this: one registry's advice must not
 # stall a 100-repository batch.
@@ -118,9 +128,10 @@ def request_with_backoff(session, method, url, registry, max_retries=3, **kwargs
     :class:`RegistryUnavailableError` when the registry keeps rate-limiting us
     or the request never completes.
     """
+    pacing = REQUEST_DELAY_SECONDS.get(registry, DEFAULT_REQUEST_DELAY_SECONDS)
     for attempt in range(max_retries + 1):
-        if REQUEST_DELAY_SECONDS:
-            time.sleep(REQUEST_DELAY_SECONDS)
+        if pacing:
+            time.sleep(pacing)
         try:
             response = session.request(method, url, **kwargs)
         except requests.exceptions.RequestException as e:

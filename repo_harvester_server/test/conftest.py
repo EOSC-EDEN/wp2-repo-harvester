@@ -14,4 +14,4 @@ from repo_harvester_server.helper import RegistryHTTP
 
 @pytest.fixture(autouse=True)
 def _no_proactive_pacing(monkeypatch):
-    monkeypatch.setattr(RegistryHTTP, 'REQUEST_DELAY_SECONDS', 0.0)
+    monkeypatch.setattr(RegistryHTTP, 'REQUEST_DELAY_SECONDS', {})

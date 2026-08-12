@@ -142,7 +142,9 @@ class TestProactivePacing:
     harvester has to stay under the budget in the first place."""
 
     def test_a_request_is_paced_before_it_is_sent(self, monkeypatch):
-        monkeypatch.setattr(RegistryHTTP, 'REQUEST_DELAY_SECONDS', 5.0)
+        monkeypatch.setattr(
+            RegistryHTTP, 'REQUEST_DELAY_SECONDS', {'fairsharing': 5.0}
+        )
         session = _session(_response(200))
         with mock.patch(
             'repo_harvester_server.helper.RegistryHTTP.time.sleep'
@@ -152,7 +154,9 @@ class TestProactivePacing:
 
     def test_retries_are_paced_too(self, monkeypatch):
         """A retry is another request against the same budget."""
-        monkeypatch.setattr(RegistryHTTP, 'REQUEST_DELAY_SECONDS', 5.0)
+        monkeypatch.setattr(
+            RegistryHTTP, 'REQUEST_DELAY_SECONDS', {'fairsharing': 5.0}
+        )
         session = _session(_response(429), _response(200))
         with mock.patch(
             'repo_harvester_server.helper.RegistryHTTP.time.sleep'
@@ -160,6 +164,33 @@ class TestProactivePacing:
             request_with_backoff(session, 'POST', 'https://x.test/', 'fairsharing')
         # pacing, backoff, pacing again before the retry
         assert [c.args[0] for c in sleep.call_args_list] == [5.0, 1, 5.0]
+
+    def test_registries_are_paced_independently(self, monkeypatch):
+        """Pacing one registry must not tax another. re3data has never once
+        rate-limited us, in any run; FAIRsharing's budget is not its problem,
+        and charging it 5s a request cost 13 minutes of a 33-minute batch."""
+        monkeypatch.setattr(
+            RegistryHTTP, 'REQUEST_DELAY_SECONDS', {'fairsharing': 5.0}
+        )
+        session = _session(_response(200))
+        with mock.patch(
+            'repo_harvester_server.helper.RegistryHTTP.time.sleep'
+        ) as sleep:
+            request_with_backoff(session, 'GET', 'https://y.test/', 're3data')
+        sleep.assert_not_called()
+
+    def test_an_unmeasured_registry_is_not_paced(self, monkeypatch):
+        """We only pace registries we have measured. Guessing a delay for a new
+        one would slow batches down for no evidence."""
+        monkeypatch.setattr(
+            RegistryHTTP, 'REQUEST_DELAY_SECONDS', {'fairsharing': 5.0}
+        )
+        session = _session(_response(200))
+        with mock.patch(
+            'repo_harvester_server.helper.RegistryHTTP.time.sleep'
+        ) as sleep:
+            request_with_backoff(session, 'GET', 'https://z.test/', 'datacite')
+        sleep.assert_not_called()
 
 
 class TestRateLimitCapture:

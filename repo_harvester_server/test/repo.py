@@ -9,11 +9,13 @@ from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 
 
 #repouri = 'https://data.sciencespo.fr/dataverse/cdsp'
-#repouri = 'https://borealisdata.ca/'
-repouri = 'https://about.coscine.de/' #has FAIRsharing entry, re3data initially fails
+
+
+repouri = 'https://borealisdata.ca/'
+#repouri = 'https://about.coscine.de/' #has FAIRsharing entry, re3data initially fails
 #repouri =  'https://www.wdc-climate.de/ui/' # has re3data entry, FAIRsharing initially fails
 
-
+#repouri = 'https://naehrwertdaten.ch/de/'
 
 harvester = RepositoryHarvester(repouri)
 
