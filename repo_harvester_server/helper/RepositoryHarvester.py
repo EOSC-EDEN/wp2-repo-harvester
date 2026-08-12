@@ -17,6 +17,7 @@ logging.basicConfig(
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
+from repo_harvester_server.helper.RegistryHTTP import RegistryUnavailableError
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
@@ -39,11 +40,16 @@ class RepositoryHarvester:
     }
 
 
-    def __init__(self, catalog_url, run_id=None):
+    def __init__(self, catalog_url, run_id=None, re3data_harvester=None,
+                 fairsharing_harvester=None):
         self.catalog_url = catalog_url
         # One validation run per harvester unless the caller shares one across
         # repositories (harvest_all does; a single API request is its own run).
         self.run_id = run_id or ServiceInfoHelper.mint_run_id()
+        # Registry harvesters may be shared across a batch so one FAIRsharing
+        # sign-in covers every repository; a lone API request builds its own.
+        self.re3data_harvester = re3data_harvester
+        self.fairsharing_harvester = fairsharing_harvester
         self.catalog_html = None
         self.metadata = []
         self.dcats = []
@@ -54,6 +60,10 @@ class RepositoryHarvester:
         # first run), so callers report the stages separately.
         self.harmonized_ok = False
         self.persisted_ok = False
+        # Registries that could not be consulted for this repository (rate
+        # limited, unreachable). The repo still counts as harvested, but its
+        # record is incomplete and the run must say so.
+        self.degraded_sources = []
         self.check_environment_variables()
 
         self.service_helper = ServiceInfoHelper()
@@ -159,22 +169,45 @@ class RepositoryHarvester:
             self.logger.warning("Harmonized record for %s was NOT persisted to FUSEKI", self.catalog_url)
         return harvested_records
 
+    def _try_registry(self, registry, call, *args):
+        """Run one registry call, turning an unavailable registry into a
+        recorded degradation instead of a failed repository.
+
+        Skips the call outright if this registry already failed for this
+        repository — once FAIRsharing is rate-limiting us, the cross-registry
+        bridge calls below are just more doomed requests.
+        """
+        if registry in self.degraded_sources:
+            self.logger.info(
+                "Skipping %s: already unavailable for %s this run",
+                registry, self.catalog_url,
+            )
+            return None
+        try:
+            return call(*args)
+        except RegistryUnavailableError as e:
+            self.logger.warning(
+                "%s - continuing without its metadata for %s", e, self.catalog_url
+            )
+            self.degraded_sources.append(registry)
+            return None
+
     def harvest_registry_metadata(self):
         """
         Orchestrates harvesting from external registries with cross-referencing.
         """
         self.logger.info("--- Starting Registry Harvesting ---")
-        
-        re3data_harvester = Re3DataHarvester()
-        fairsharing_harvester = FAIRsharingHarvester()
+
+        re3data_harvester = self.re3data_harvester or Re3DataHarvester()
+        fairsharing_harvester = self.fairsharing_harvester or FAIRsharingHarvester()
 
         re3data_meta = None
         fairsharing_meta = None
-        
+
         # 1. First pass on re3data
         re3_urls = '|'.join(self.catalog_ids) # in case more than one URL is know (e.g. via redirect)
-        re3data_meta = re3data_harvester.harvest(re3_urls)
-        
+        re3data_meta = self._try_registry('re3data', re3data_harvester.harvest, re3_urls)
+
         # 2. Harvest FAIRsharing, using re3data's findings if available
         fairsharing_id = None
         if re3data_meta:
@@ -183,11 +216,15 @@ class RepositoryHarvester:
                 if 'fairsharing' in identifier.lower():
                     fairsharing_id = identifier
                     break
-        
+
         if fairsharing_id:
-            fairsharing_meta = fairsharing_harvester.harvest_by_id(fairsharing_id)
+            fairsharing_meta = self._try_registry(
+                'fairsharing', fairsharing_harvester.harvest_by_id, fairsharing_id
+            )
         else:
-            fairsharing_meta = fairsharing_harvester.harvest(self.catalog_url)
+            fairsharing_meta = self._try_registry(
+                'fairsharing', fairsharing_harvester.harvest, self.catalog_url
+            )
 
         # 3. Second pass on re3data (bridge), if the first pass failed
         if not re3data_meta and fairsharing_meta:
@@ -199,11 +236,16 @@ class RepositoryHarvester:
                     re3data_id = identifier
                     break
             if re3data_id:
-                re3data_meta = re3data_harvester.harvest_by_id(re3data_id)
+                re3data_meta = self._try_registry(
+                    're3data', re3data_harvester.harvest_by_id, re3data_id
+                )
             # Fallback: Try bridging by name if no ID found
             elif fairsharing_meta.get('title'):
                 self.logger.info(f"Bridging to re3data by name: {fairsharing_meta.get('title')}")
-                re3data_meta = re3data_harvester.harvest_by_name(fairsharing_meta.get('title'))
+                re3data_meta = self._try_registry(
+                    're3data', re3data_harvester.harvest_by_name,
+                    fairsharing_meta.get('title')
+                )
 
         # 4. Merge all collected metadata
         self.merge_metadata(re3data_meta, 're3data')
