@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Eden Repository Harvester"
+version = "0.1.0"
+description = "Eden Repository Harvester"
+requires-python = ">=3.9"
+
+dependencies = [
+    "connexion[uvicorn,flask,swagger-ui]",
+    "rdflib==7.5.0",
+    "lxml==6.0.2",
+    "requests>=2.30.0",
+    "six",
+    "python-dateutil",
+    "jmespath",
+    "SPARQLWrapper",
+    "jsonschema",
+    "eden-service-validator @ git+https://github.com/EOSC-EDEN/wp2-service-validator.git@v0.1.0",
+]
