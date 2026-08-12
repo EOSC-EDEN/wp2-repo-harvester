@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Eden Repository Harvester"
+name = "eden-repository-harvester"
 version = "0.1.0"
 description = "Eden Repository Harvester"
 requires-python = ">=3.9"
@@ -20,3 +20,5 @@ dependencies = [
     "jsonschema",
     "eden-service-validator @ git+https://github.com/EOSC-EDEN/wp2-service-validator.git@v0.1.0",
 ]
+[tool.setuptools.packages.find]
+include = ["repo_harvester_server*"]
