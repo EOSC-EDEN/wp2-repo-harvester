@@ -15,6 +15,17 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
 
+# Hostname labels that name infrastructure rather than a repository. Searching
+# FAIRsharing for one of these returns 25 arbitrary records, takes seconds of
+# their server's time, and can never survive the hostname filter afterwards.
+# Deliberately short and strictly infrastructural: real repository names live in
+# this position too ('cds' is the Copernicus Data Store, 'radar' is Oxford
+# Brookes' repository), and suppressing those would lose records.
+GENERIC_HOST_LABELS = frozenset({
+    'www', 'www2', 'web', 'data', 'opendata', 'repository', 'repo', 'archive',
+    'catalog', 'catalogue', 'portal', 'api', 'site', 'library', 'db', 'dv',
+})
+
 class FAIRsharingHarvester:
     """
     A harvester for fetching metadata from the FAIRsharing.org registry.
@@ -63,9 +74,14 @@ class FAIRsharingHarvester:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to authenticate with FAIRsharing: {e}")
 
-    def harvest(self, catalog_url):
+    def harvest(self, catalog_url, repository_name=None):
         """
         Public method to harvest metadata for a given URL.
+
+        ``repository_name`` is the repository's real name when the caller knows
+        it, and is what the fallback search should ask for. Callers that only
+        have a URL (the connexion controller) may omit it, and the fallback then
+        guesses from the hostname.
         """
         if not self.jwt_token:
             raise RegistryUnavailableError(
@@ -87,18 +103,35 @@ class FAIRsharingHarvester:
             return metadata
 
         # Strategy 2: Search by repository name
-        repo_name = hostname.split('.')[0]
-        if repo_name != hostname:
-            self.logger.info(f"Strategy 2: Retrying FAIRsharing search with repository name: '{repo_name}'")
-            metadata = self._search_fairsharing(repo_name, hostname_filter=hostname)
+        search_name = repository_name or self._name_from_hostname(hostname)
+        if search_name:
+            self.logger.info(f"Strategy 2: Retrying FAIRsharing search with repository name: '{search_name}'")
+            metadata = self._search_fairsharing(search_name, hostname_filter=hostname)
             if metadata:
                 self.logger.info(f"SUCCESS: Found FAIRsharing record via name search: {metadata.get('title')}")
                 return metadata
 
         self.logger.info(
             "FAIRsharing has no record matching '%s' (searched by hostname%s).",
-            hostname, " and name" if repo_name != hostname else "",
+            hostname, " and name" if search_name else "",
         )
+        return None
+
+    def _name_from_hostname(self, hostname):
+        """Guess a searchable repository name from a hostname, or None.
+
+        Only used when the caller could not supply the real name. Takes the
+        first label that identifies a repository rather than infrastructure, so
+        'www.gesis.org' asks about 'gesis' and 'data.dtu.dk' about 'dtu'. Never
+        steps onto the final label - that is the public suffix, not a name - and
+        returns None rather than asking a question with no possible answer.
+        """
+        normalized = self._normalize_hostname(hostname)
+        if not normalized:
+            return None
+        for label in normalized.split('.')[:-1]:
+            if label not in GENERIC_HOST_LABELS:
+                return label
         return None
 
     def harvest_by_id(self, fairsharing_id):

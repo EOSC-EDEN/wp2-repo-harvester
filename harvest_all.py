@@ -81,6 +81,7 @@ def harvest_repository(url, name, run_id=None, re3data_harvester=None,
         url, run_id=run_id,
         re3data_harvester=re3data_harvester,
         fairsharing_harvester=fairsharing_harvester,
+        repository_name=name,
     )
     exported_records = harvester.harvest()
 

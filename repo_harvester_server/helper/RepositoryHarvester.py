@@ -41,8 +41,12 @@ class RepositoryHarvester:
 
 
     def __init__(self, catalog_url, run_id=None, re3data_harvester=None,
-                 fairsharing_harvester=None):
+                 fairsharing_harvester=None, repository_name=None):
         self.catalog_url = catalog_url
+        # The repository's real name, when the caller knows it. A registry
+        # search by name beats one by a name guessed from the hostname, which
+        # is how a batch ended up asking FAIRsharing about 'www' and 'data'.
+        self.repository_name = repository_name
         # One validation run per harvester unless the caller shares one across
         # repositories (harvest_all does; a single API request is its own run).
         self.run_id = run_id or ServiceInfoHelper.mint_run_id()
@@ -223,7 +227,8 @@ class RepositoryHarvester:
             )
         else:
             fairsharing_meta = self._try_registry(
-                'fairsharing', fairsharing_harvester.harvest, self.catalog_url
+                'fairsharing', fairsharing_harvester.harvest,
+                self.catalog_url, self.repository_name,
             )
 
         # 3. Second pass on re3data (bridge), if the first pass failed
