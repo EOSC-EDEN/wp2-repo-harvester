@@ -6,6 +6,10 @@ import requests
 from urllib.parse import urlparse
 import logging
 from repo_harvester_server.helper.JMESPATHQueries import FAIRSHARING_QUERY
+from repo_harvester_server.helper.RegistryHTTP import (
+    RegistryUnavailableError,
+    request_with_backoff,
+)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -21,6 +25,9 @@ class FAIRsharingHarvester:
     def __init__(self):
         self.api_url = "https://api.fairsharing.org"
         self.jwt_token = None
+        # One session for sign-in and every search: reuses the TCP/TLS
+        # connection instead of shaking hands once per request.
+        self.session = requests.Session()
         self._authenticate()
 
     def _authenticate(self):
@@ -39,12 +46,20 @@ class FAIRsharingHarvester:
         headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
 
         try:
-            response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
+            response = request_with_backoff(
+                self.session, 'POST', url, 'fairsharing',
+                headers=headers, data=json.dumps(payload), timeout=10,
+            )
             response.raise_for_status()
             data = response.json()
             self.jwt_token = data.get('jwt')
             if self.jwt_token:
                 self.logger.info("Successfully authenticated with FAIRsharing.")
+        except RegistryUnavailableError as e:
+            # Deliberately not re-raised: the caller may be constructing one
+            # shared harvester for a whole batch, and that must not fail. An
+            # unset token degrades each repository individually instead.
+            self.logger.error("Could not sign in to FAIRsharing: %s", e)
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to authenticate with FAIRsharing: {e}")
 
@@ -53,8 +68,11 @@ class FAIRsharingHarvester:
         Public method to harvest metadata for a given URL.
         """
         if not self.jwt_token:
-            self.logger.warning("Skipping FAIRsharing harvesting due to authentication failure.")
-            return None
+            raise RegistryUnavailableError(
+                'fairsharing',
+                "not signed in - check the FAIRSHARING_USERNAME and "
+                "FAIRSHARING_PASSWORD environment variables",
+            )
 
         self.logger.info("Harvesting from FAIRsharing...")
         hostname = urlparse(catalog_url).hostname
@@ -77,13 +95,23 @@ class FAIRsharingHarvester:
                 self.logger.info(f"SUCCESS: Found FAIRsharing record via name search: {metadata.get('title')}")
                 return metadata
 
-        self.logger.info("FAIRsharing harvest failed: No matching records found.")
+        self.logger.info(
+            "FAIRsharing has no record matching '%s' (searched by hostname%s).",
+            hostname, " and name" if repo_name != hostname else "",
+        )
         return None
 
     def harvest_by_id(self, fairsharing_id):
         """
         Harvests metadata directly from FAIRsharing using its DOI.
         """
+        if not self.jwt_token:
+            raise RegistryUnavailableError(
+                'fairsharing',
+                "not signed in - check the FAIRSHARING_USERNAME and "
+                "FAIRSHARING_PASSWORD environment variables",
+            )
+
         self.logger.info(f"-- Harvesting from FAIRsharing by ID: {fairsharing_id} --")
         return self._search_fairsharing(fairsharing_id, expected_doi=fairsharing_id)
 
@@ -135,33 +163,53 @@ class FAIRsharingHarvester:
 
         return False
 
-    def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None):
-        """
-        Helper to search FAIRsharing API and fetch details for the first match.
-        """
+    def _post_search(self, query):
+        """One search POST, with 429 backoff. Returns the response."""
         search_url = f"{self.api_url}/search/fairsharing_records/"
-        payload = {"q": query}
         auth_headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
             'Authorization': f"Bearer {self.jwt_token}"
         }
+        self.logger.info(f"Querying FAIRsharing API: {search_url} with query='{query}'")
+        return request_with_backoff(
+            self.session, 'POST', search_url, 'fairsharing',
+            headers=auth_headers, data=json.dumps({"q": query}), timeout=15,
+        )
+
+    def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None):
+        """
+        Helper to search FAIRsharing API and fetch details for the first match.
+        """
+        response = self._post_search(query)
+
+        if response.status_code == 401:
+            # One shared token covers a whole batch, so it may expire mid-run.
+            # Sign in again once before treating this as a real auth failure.
+            self.logger.info(
+                "FAIRsharing rejected the token (401); re-authenticating once."
+            )
+            self._authenticate()
+            if not self.jwt_token:
+                raise RegistryUnavailableError(
+                    'fairsharing', 'sign-in was rejected while renewing the session token'
+                )
+            response = self._post_search(query)
+
+        if response.status_code == 401:
+            raise RegistryUnavailableError(
+                'fairsharing', 'HTTP 401 even after renewing the session token'
+            )
 
         try:
-            self.logger.info(f"Querying FAIRsharing API: {search_url} with query='{query}'")
-            response = requests.post(search_url, headers=auth_headers, data=json.dumps(payload), timeout=15)
-            if response.status_code == 401:
-                self.logger.warning("FAIRsharing search failed: 401 Unauthorized. Check permissions.")
-                return None
             response.raise_for_status()
-            
             results = response.json().get('data', [])
-            self.logger.info(f"FAIRsharing API returned {len(results)} results.")
-            return self._parse_search_results(results, hostname_filter, expected_doi)
-
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Error querying FAIRsharing search API: {e}")
-        return None
+            raise RegistryUnavailableError(
+                'fairsharing', f"search response could not be read: {e}"
+            )
+        self.logger.info(f"FAIRsharing API returned {len(results)} results.")
+        return self._parse_search_results(results, hostname_filter, expected_doi)
 
     def _parse_search_results(self, results, hostname_filter=None, expected_doi=None):
         """
@@ -236,13 +284,17 @@ class FAIRsharingHarvester:
             self.logger.info("Matching records found, but none were active/ready.")
             return None
 
-        attributes = best_record.get('attributes', {})
         #metadata_nested = attributes.get('metadata', {})
+        metadata = None
         try:
             metadata = jmespath.search(FAIRSHARING_QUERY, best_record)
             #print(json.dumps(metadata, indent=2))
         except Exception as e:
-            self.logger.warning(f"Error parsing FAIRsharing search results with JMESPATH : {e}")
+            self.logger.error(
+                "Could not parse FAIRsharing record %s with JMESPATH: %s",
+                best_record.get('id'), e,
+            )
+            return None
 
         '''metadata = {
             'fairsharingID': best_record.get('id'),

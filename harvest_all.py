@@ -22,6 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper, FusekiAuthError
+from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
+from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
 
 
 # Configuration
@@ -61,17 +63,25 @@ def make_safe_filename(name):
     return safe_name if safe_name else "unnamed_repo"
 
 
-def harvest_repository(url, name, run_id=None):
+def harvest_repository(url, name, run_id=None, re3data_harvester=None,
+                       fairsharing_harvester=None):
     """
     Harvest a single repository.
     Returns (result_dict, stages) where stages holds the per-stage outcome:
-    'harvested' (records were exported), 'harmonized' (merged record built)
-    and 'persisted' (harmonized graph written to FUSEKI).
+    'harvested' (records were exported), 'harmonized' (merged record built),
+    'persisted' (harmonized graph written to FUSEKI) and 'degraded_sources'
+    (registries that could not be consulted, so the record is incomplete).
 
     run_id ties this repository's DQV measurements to the batch-wide validation
-    run, so all graphs of one harvest share a single prov:Activity.
+    run, so all graphs of one harvest share a single prov:Activity. The registry
+    harvesters are shared across the batch so one FAIRsharing sign-in covers
+    every repository.
     """
-    harvester = RepositoryHarvester(url, run_id=run_id)
+    harvester = RepositoryHarvester(
+        url, run_id=run_id,
+        re3data_harvester=re3data_harvester,
+        fairsharing_harvester=fairsharing_harvester,
+    )
     exported_records = harvester.harvest()
 
     # Collect all services from all exported records (same logic as controller)
@@ -105,6 +115,7 @@ def harvest_repository(url, name, run_id=None):
         'harvested': bool(exported_records),
         'harmonized': harvester.harmonized_ok,
         'persisted': harvester.persisted_ok,
+        'degraded_sources': list(harvester.degraded_sources),
     }
 
     return result, stages
@@ -114,6 +125,7 @@ def build_summary(total, results, start_time, duration):
     """Build the _harvest_summary.json dict, including per-stage counts."""
     harmonized_count = sum(1 for r in results['success'] if r.get('harmonized'))
     persisted_count = sum(1 for r in results['success'] if r.get('persisted'))
+    degraded_count = sum(1 for r in results['success'] if r.get('degraded_sources'))
     return {
         'timestamp': start_time.isoformat(),
         'duration_seconds': duration.total_seconds(),
@@ -122,6 +134,7 @@ def build_summary(total, results, start_time, duration):
         'failed_count': len(results['failed']),
         'harmonized_count': harmonized_count,
         'persisted_count': persisted_count,
+        'degraded_count': degraded_count,
         'success': results['success'],
         'failed': results['failed']
     }
@@ -215,6 +228,18 @@ def main():
         print("Continuing without FUSEKI: harvest results will be saved locally only.")
         print("Nothing can be harmonised or persisted to the registry store this run.")
 
+    # One FAIRsharing sign-in for the whole batch instead of one per repository:
+    # ~100 sign-in POSTs per run is the kind of traffic a registry rate-limits.
+    # A failed sign-in does NOT stop the run — the repositories still get
+    # harvested from re3data and their own landing pages.
+    re3data_harvester = Re3DataHarvester()
+    fairsharing_harvester = FAIRsharingHarvester()
+    if not fairsharing_harvester.jwt_token:
+        print("\nWARNING: FAIRsharing sign-in failed.")
+        print("Continuing without FAIRsharing: records will be built from re3data")
+        print("and the repositories' own metadata only.")
+        print("Check the FAIRSHARING_USERNAME / FAIRSHARING_PASSWORD environment variables.")
+
     # Create output directory
     output_dir = args.output_dir
     if not os.path.exists(output_dir):
@@ -244,7 +269,11 @@ def main():
         print(f"    URL: {url}")
 
         try:
-            result, stages = harvest_repository(url, name, run_id=run_id)
+            result, stages = harvest_repository(
+                url, name, run_id=run_id,
+                re3data_harvester=re3data_harvester,
+                fairsharing_harvester=fairsharing_harvester,
+            )
 
             # Save to file
             safe_name = make_safe_filename(name)
@@ -262,6 +291,10 @@ def main():
             print(f"        Metadata: {'Yes' if has_metadata else 'No'}, Services: {service_count}")
             print(f"        Harmonized: {'Yes' if stages['harmonized'] else 'NO'}, "
                   f"Persisted to FUSEKI: {'Yes' if stages['persisted'] else 'NO'}")
+            if stages['degraded_sources']:
+                print(f"        DEGRADED: no metadata from "
+                      f"{', '.join(stages['degraded_sources'])} "
+                      f"(the record is incomplete)")
 
             results['success'].append({
                 'name': name,
@@ -270,7 +303,8 @@ def main():
                 'services': service_count,
                 'harvested': stages['harvested'],
                 'harmonized': stages['harmonized'],
-                'persisted': stages['persisted']
+                'persisted': stages['persisted'],
+                'degraded_sources': stages['degraded_sources'],
             })
 
         except Exception as e:
@@ -312,6 +346,13 @@ def main():
         for item in not_harmonized:
             print(f"  - {item['name']}")
 
+    degraded = [r for r in results['success'] if r.get('degraded_sources')]
+    print(f"Degraded (missing a registry): {len(degraded)}")
+    if degraded:
+        print("\n--- Harvested with missing registry sources ---")
+        for item in degraded:
+            print(f"  - {item['name']}: no {', '.join(item['degraded_sources'])} metadata")
+
     # Save summary report
     summary_file = os.path.join(output_dir, '_harvest_summary.json')
     summary = build_summary(len(repos), results, start_time, duration)
@@ -335,9 +376,14 @@ def main():
             print("registry store was not updated. Likely cause: wrong or missing")
             print("FUSEKI_USERNAME / FUSEKI_PASSWORD.")
         sys.exit(1)
-    elif not_harmonized or results['failed']:
+    elif not_harmonized or results['failed'] or degraded:
         print(f"\nVERDICT: PARTIAL - {len(persisted)} of {len(repos)} repositories "
               "harmonized and persisted; see the summaries above for the rest.")
+        if degraded:
+            print(f"{len(degraded)} repositor{'y' if len(degraded) == 1 else 'ies'} "
+                  "were harvested without all registry metadata: their records are "
+                  "incomplete and worth re-harvesting once the registry is available.")
+        sys.exit(1)
     else:
         print(f"\nVERDICT: OK - all {len(persisted)} repositories harvested, "
               "harmonized and persisted.")

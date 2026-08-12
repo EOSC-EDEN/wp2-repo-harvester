@@ -9,6 +9,10 @@ import csv
 import logging
 from repo_harvester_server.data.country_codes import country_codes_3
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
+from repo_harvester_server.helper.RegistryHTTP import (
+    RegistryUnavailableError,
+    request_with_backoff,
+)
 
 
 logging.basicConfig(
@@ -24,6 +28,9 @@ class Re3DataHarvester:
     def __init__(self):
         self.api_url = "https://www.re3data.org/api/beta"
         self.ns = {"r3d": "http://www.re3data.org/schema/2-2"}
+        # One session for the search plus every record fetch it triggers:
+        # re3data is our heaviest caller, so connection reuse matters most here.
+        self.session = requests.Session()
         self.service_helper = ServiceInfoHelper()
 
         #self.service_mappings = self._load_service_mappings()
@@ -114,55 +121,56 @@ class Re3DataHarvester:
         return False
 
     def _search_and_verify(self, query, search_type):
+        search_url = f"{self.api_url}/repositories?query={query}"
+        self.logger.info(f"Querying re3data search API: {search_url}")
+        resp = request_with_backoff(self.session, 'GET', search_url, 're3data', timeout=15)
         try:
-            search_url = f"{self.api_url}/repositories?query={query}"
-            self.logger.info(f"Querying re3data search API: {search_url}")
-            resp = requests.get(search_url, timeout=15)
             resp.raise_for_status()
             root = etree.fromstring(resp.content)
-            
-            # Iterate through <repository> elements in the search result list
-            for repo_element in root.findall('.//repository'):
-                repo_id_elem = repo_element.find('id')
-                repo_name_elem = repo_element.find('name')
-                
-                if repo_id_elem is None or not repo_id_elem.text:
-                    self.logger.warning("Found a search result with no ID, skipping.")
+        except (requests.exceptions.RequestException, etree.XMLSyntaxError) as e:
+            # An unreadable answer is no answer: report it rather than
+            # recording a miss the repository does not deserve.
+            raise RegistryUnavailableError(
+                're3data', f"search response could not be read: {e}"
+            )
+
+        # Iterate through <repository> elements in the search result list
+        for repo_element in root.findall('.//repository'):
+            repo_id_elem = repo_element.find('id')
+            repo_name_elem = repo_element.find('name')
+
+            if repo_id_elem is None or not repo_id_elem.text:
+                self.logger.warning("Found a search result with no ID, skipping.")
+                continue
+
+            repo_id = repo_id_elem.text
+
+            # Verification logic based on search type
+            if search_type == 'name':
+                if repo_name_elem is not None and repo_name_elem.text:
+                    self.logger.info(f"Verifying name match for ID {repo_id}: Query='{query}', Found='{repo_name_elem.text}'")
+                    if query.lower() in repo_name_elem.text.lower():
+                        self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via name search: {repo_id}")
+                        return self.harvest_by_id(repo_id)
+
+            elif search_type == 'hostname':
+                # For hostname verification, we still need to fetch the full record to get the URL
+                # because the search result list doesn't include the repositoryURL.
+                repo_root = self._fetch_and_parse_record_xml(repo_id)
+                if repo_root is None:
                     continue
-                
-                repo_id = repo_id_elem.text
-                
-                # Verification logic based on search type
-                if search_type == 'name':
-                    if repo_name_elem is not None and repo_name_elem.text:
-                        self.logger.info(f"Verifying name match for ID {repo_id}: Query='{query}', Found='{repo_name_elem.text}'")
-                        if query.lower() in repo_name_elem.text.lower():
-                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via name search: {repo_id}")
-                            return self.harvest_by_id(repo_id)
-                
-                elif search_type == 'hostname':
-                    # For hostname verification, we still need to fetch the full record to get the URL
-                    # because the search result list doesn't include the repositoryURL.
-                    repo_root = self._fetch_and_parse_record_xml(repo_id)
-                    if repo_root is None:
-                        continue
 
-                    repo_main_url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
-                    if repo_main_url_element is not None and repo_main_url_element.text:
-                        re3data_hostname = urlparse(repo_main_url_element.text).hostname
+                repo_main_url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
+                if repo_main_url_element is not None and repo_main_url_element.text:
+                    re3data_hostname = urlparse(repo_main_url_element.text).hostname
 
-                        self.logger.info(f"Verifying hostname match for ID {repo_id}: Query='{query}', Found='{re3data_hostname}'")
+                    self.logger.info(f"Verifying hostname match for ID {repo_id}: Query='{query}', Found='{re3data_hostname}'")
 
-                        if self._hostnames_match(query, re3data_hostname):
-                            self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via hostname search: {repo_id}")
-                            return self._parse_record(repo_root)
+                    if self._hostnames_match(query, re3data_hostname):
+                        self.logger.info(f"SUCCESS: Found verified re3data entry for '{query}' via hostname search: {repo_id}")
+                        return self._parse_record(repo_root)
 
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Re3data API request error during search for {query}: {e}")
-        except etree.XMLSyntaxError as e:
-            self.logger.error(f"Error parsing re3data XML during search for {query}: {e}")
-            
-        self.logger.warning(f"Could not find a verified re3data entry for query: '{query}'")
+        self.logger.info(f"re3data has no verified entry for query: '{query}'")
         return None
 
     def harvest_by_id(self, re3data_id):
@@ -170,24 +178,34 @@ class Re3DataHarvester:
         Harvests metadata directly from re3data using its re3data.orgIdentifier.
         """
         self.logger.info(f"-- Harvesting from re3data by ID: {re3data_id} --")
-        try:
-            repo_root = self._fetch_and_parse_record_xml(re3data_id)
-            if repo_root is not None:
-                self.logger.info(f"Successfully fetched re3data entry for ID: {re3data_id}")
-                return self._parse_record(repo_root)
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Re3data API request error during harvest by ID {re3data_id}: {e}")
-        except etree.XMLSyntaxError as e:
-            self.logger.error(f"Error parsing re3data XML during harvest by ID {re3data_id}: {e}")
+        repo_root = self._fetch_and_parse_record_xml(re3data_id)
+        if repo_root is not None:
+            self.logger.info(f"Successfully fetched re3data entry for ID: {re3data_id}")
+            return self._parse_record(repo_root)
         return None
 
     def _fetch_and_parse_record_xml(self, repo_id):
         """
         Helper method to fetch and parse the detailed XML record for a given repo_id.
+
+        Rate limiting propagates (there is no point walking the remaining search
+        hits while re3data is refusing us), and so does a 5xx: the registry is
+        not answering, not telling us the record is absent, so this must not be
+        recorded as a genuine miss for `harvest_by_id`'s single-record callers.
+        A 404 or an unparseable body is a genuinely absent/unreadable record
+        (e.g. a stale bridged ID) and stays a plain `None` so the hostname-search
+        loop skips just this one candidate and keeps going.
         """
+        repo_url = f"{self.api_url}/repository/{repo_id}"
+        repo_resp = request_with_backoff(
+            self.session, 'GET', repo_url, 're3data', timeout=15
+        )
+        if repo_resp.status_code >= 500:
+            raise RegistryUnavailableError(
+                're3data',
+                f"record fetch for {repo_id} failed: HTTP {repo_resp.status_code}",
+            )
         try:
-            repo_url = f"{self.api_url}/repository/{repo_id}"
-            repo_resp = requests.get(repo_url, timeout=15)
             repo_resp.raise_for_status()
             return etree.fromstring(repo_resp.content)
         except (requests.exceptions.RequestException, etree.XMLSyntaxError) as e:
