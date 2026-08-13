@@ -308,6 +308,20 @@ class RepositoryHarvester:
             self.logger.warning("No metadata was harvested, nothing to export.")
             return final_records
 
+        # export() is a pure DCAT mapping over the chunk it is handed; it needs
+        # no landing page. Registry metadata arrives even when the initial fetch
+        # failed, so fall back to a page-less helper rather than dropping those
+        # records silently - which is how repositories with a verified re3data
+        # and FAIRsharing record still reported 'Metadata: No, Services: 0'.
+        #
+        # Constructed without a URL on purpose, as RepositoryHarmonizer does.
+        # Passing one makes SignPostingHelper fetch the page with no timeout, so
+        # exporting a repository whose landing page is already known to be dead
+        # would hang and then fail the repository - AgroPortal did exactly that
+        # (agroportal.lirmm.fr -> agroportal.eu, connect timeout) in the
+        # 2026-08-13 batch.
+        mapper = self.metadata_helper or MetadataHelper()
+
         for m in self.metadata:
             metadata_chunk = m.get('metadata')
             source = m.get('source')
@@ -317,42 +331,41 @@ class RepositoryHarvester:
             if  metadata_chunk.get('services'):
                 if isinstance(metadata_chunk['services'], dict):
                     metadata_chunk['services'] =  list(metadata_chunk['services'].values())
-            if self.metadata_helper:
-                export_record = self.metadata_helper.export(metadata_chunk)
-                primary_topic = export_record.get('foaf:primaryTopic')
-                #this would ignore feed metadata etc which have no repo info per se
-                if primary_topic:
-                    now = datetime.now()
-                    date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
-                    graph_id = f'eden://harvester/{source}/{self.catalog_url}'
+            export_record = mapper.export(metadata_chunk)
+            primary_topic = export_record.get('foaf:primaryTopic')
+            #this would ignore feed metadata etc which have no repo info per se
+            if primary_topic:
+                now = datetime.now()
+                date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
+                graph_id = f'eden://harvester/{source}/{self.catalog_url}'
 
-                    export_record['@id'] = graph_id
-                    export_record['dct:issued'] = date_time
+                export_record['@id'] = graph_id
+                export_record['dct:issued'] = date_time
 
-                    if 'prov:wasGeneratedBy' in export_record:
-                        export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
-                        export_record['prov:wasGeneratedBy']['rdfs:label'] = self.extractors.get(source, "Unknown Harvester")
-                        export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
+                if 'prov:wasGeneratedBy' in export_record:
+                    export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
+                    export_record['prov:wasGeneratedBy']['rdfs:label'] = self.extractors.get(source, "Unknown Harvester")
+                    export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
 
-                    if 'foaf:primaryTopic' in export_record:
-                         export_record['foaf:primaryTopic']['@id'] = self.catalog_url
+                if 'foaf:primaryTopic' in export_record:
+                     export_record['foaf:primaryTopic']['@id'] = self.catalog_url
 
-                    final_records.append(export_record)
-                    self.logger.info(f"Successfully processed record from source: {source}")
-                    ######################## saving to FUSEKI #######################
-                    if save:
-                        json_ld_str =json.dumps(export_record)
-                        g = Graph()
-                        g.parse(data=json_ld_str, format='json-ld')
-                        counted_triples = len(g)
+                final_records.append(export_record)
+                self.logger.info(f"Successfully processed record from source: {source}")
+                ######################## saving to FUSEKI #######################
+                if save:
+                    json_ld_str =json.dumps(export_record)
+                    g = Graph()
+                    g.parse(data=json_ld_str, format='json-ld')
+                    counted_triples = len(g)
 
-                        saved_triples = self.fuseki.save(graph_id, json_ld_str)
+                    saved_triples = self.fuseki.save(graph_id, json_ld_str)
 
-                        if saved_triples != None:
-                            if saved_triples < counted_triples:
-                                self.logger.warning(f"FUSEKI import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
-                else:
-                     self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
+                    if saved_triples != None:
+                        if saved_triples < counted_triples:
+                            self.logger.warning(f"FUSEKI import might be incomplete: Saved {saved_triples} but counted {counted_triples} triples.")
+            else:
+                 self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
 
         self.logger.info("--- Finished Export ---")
         return final_records
