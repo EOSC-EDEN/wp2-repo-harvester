@@ -21,14 +21,41 @@ logging.basicConfig(
 
 logger = logging.getLogger('RegistryHTTP')
 
-# Proactive pacing between registry requests, in seconds. Kept at 0 until
-# FAIRsharing tells us an acceptable request rate (asked 2026-08-10); raising it
-# slows a whole batch down without touching any call site.
-REQUEST_DELAY_SECONDS = 0.0
+# Proactive pacing before each registry request, in seconds, per registry.
+#
+# Keyed by registry because the limits are not shared. FAIRsharing's limiter
+# behaves like a rolling one-minute budget of roughly a dozen requests, not a
+# rate cap: the batch of 2026-08-12 tripped it while averaging 0.24 requests/second
+# - twenty times slower than the 5 req/s their own MCP client self-paces at - then
+# answered normally for about a minute, then tripped again, in eight bursts.
+# Reactive backoff cannot win against a window that long: 1+2+4 seconds of retrying
+# lands inside the same exhausted budget, which is why 21 of 28 rate-limited
+# repositories exhausted their retries and were reported degraded. Pacing at 5s
+# holds us near 12 requests/minute and took that run to zero degraded records.
+#
+# re3data is deliberately absent: it has never rate-limited us in any run. Pacing
+# it alongside FAIRsharing cost 13 minutes of a 33-minute batch for no benefit.
+#
+# The 5s is inferred from one run, not documented by FAIRsharing. Re-measure after
+# a batch and adjust.
+REQUEST_DELAY_SECONDS = {
+    'fairsharing': 5.0,
+}
+
+# Registries we have not measured are not paced: inventing a delay would slow
+# every batch down on no evidence.
+DEFAULT_REQUEST_DELAY_SECONDS = 0.0
 
 # Never honour a Retry-After longer than this: one registry's advice must not
 # stall a 100-repository batch.
 MAX_BACKOFF_SECONDS = 60
+
+# How much of a 429 body to keep. Enough to tell Rack::Attack's "Retry later"
+# from an nginx error page, not enough to bury the log in HTML.
+CAPTURE_BODY_CHARS = 500
+
+# Registries whose rate-limit response we have already recorded this run.
+_captured_rate_limits = set()
 
 
 class RegistryUnavailableError(Exception):
@@ -70,6 +97,29 @@ def _retry_after_seconds(response, attempt):
     return min(2 ** attempt, MAX_BACKOFF_SECONDS)
 
 
+def _capture_rate_limit_response(response, registry, url):
+    """Record the first 429 a registry sends us, once per run.
+
+    A rate-limit response is the only direct evidence we get about a registry's
+    limiter, and retrying throws it away. The headers settle whether
+    ``Retry-After`` is sent at all; the body identifies the layer that sent it
+    (Rack::Attack answers ``Retry later``, nginx serves an HTML error page).
+
+    Deliberately logs the *response* headers only. The request headers carry the
+    bearer token, and this output is meant to be readable — and forwardable to
+    the registry's own team — without leaking our credentials.
+    """
+    if registry in _captured_rate_limits:
+        return
+    _captured_rate_limits.add(registry)
+    logger.warning(
+        "First %s rate-limit response this run, recorded verbatim:\n"
+        "  url: %s\n  status: %s\n  headers: %s\n  body[:%s]: %r",
+        registry, url, response.status_code, dict(response.headers),
+        CAPTURE_BODY_CHARS, (response.text or '')[:CAPTURE_BODY_CHARS],
+    )
+
+
 def request_with_backoff(session, method, url, registry, max_retries=3, **kwargs):
     """Perform an HTTP request, retrying with backoff while the registry answers 429.
 
@@ -78,9 +128,10 @@ def request_with_backoff(session, method, url, registry, max_retries=3, **kwargs
     :class:`RegistryUnavailableError` when the registry keeps rate-limiting us
     or the request never completes.
     """
+    pacing = REQUEST_DELAY_SECONDS.get(registry, DEFAULT_REQUEST_DELAY_SECONDS)
     for attempt in range(max_retries + 1):
-        if REQUEST_DELAY_SECONDS:
-            time.sleep(REQUEST_DELAY_SECONDS)
+        if pacing:
+            time.sleep(pacing)
         try:
             response = session.request(method, url, **kwargs)
         except requests.exceptions.RequestException as e:
@@ -88,6 +139,9 @@ def request_with_backoff(session, method, url, registry, max_retries=3, **kwargs
 
         if response.status_code != 429:
             return response
+
+        _capture_rate_limit_response(response, registry, url)
+        rate_limited = response
 
         if attempt == max_retries:
             break
@@ -99,6 +153,10 @@ def request_with_backoff(session, method, url, registry, max_retries=3, **kwargs
         )
         time.sleep(wait)
 
-    raise RegistryUnavailableError(
-        registry, f"rate limited (HTTP 429), still refused after {max_retries} retries"
-    )
+    # Carry the evidence into the exception too: by the time a degraded harvest
+    # is reported, the log line above is thousands of repositories away.
+    reason = f"rate limited (HTTP 429), still refused after {max_retries} retries"
+    said = (rate_limited.text or '').strip()[:CAPTURE_BODY_CHARS]
+    if said:
+        reason += f"; registry said: {said!r}"
+    raise RegistryUnavailableError(registry, reason)
