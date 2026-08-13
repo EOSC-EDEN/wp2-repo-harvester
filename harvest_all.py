@@ -11,6 +11,7 @@ Usage:
 
 import json
 import csv
+import logging
 import os
 import sys
 import argparse
@@ -33,6 +34,64 @@ CSV_FILE = os.path.join(
     'SG4 FIDELIS repos.csv'
 )
 OUTPUT_DIR = "output"
+
+
+class _Tee:
+    """A stream that writes to the console and to the run's log file at once.
+
+    Anything not defined here (encoding, fileno, isatty, ...) is delegated to
+    the real stream, so standing in for sys.stdout stays transparent.
+    """
+
+    def __init__(self, stream, logfile):
+        self._stream = stream
+        self._logfile = logfile
+
+    def write(self, text):
+        self._stream.write(text)
+        self._logfile.write(text)
+        return len(text)
+
+    def flush(self):
+        self._stream.flush()
+        self._logfile.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def start_run_log(output_dir, run_id):
+    """Mirror this run's console output into output/harvest-<run_id>.log.
+
+    Named after the validation run so a log can be tied to the graphs it
+    produced: the same id goes to FUSEKI as eden://validator/run/<run_id>. A
+    per-run name also stops a new batch overwriting the evidence of the last
+    one.
+
+    Both halves of the console have to be captured for the file to be worth
+    reading: the report (repository headers, per-repo outcome, the closing
+    summaries) is printed to stdout, while the harvesters' detail is logged to
+    stderr. They share one file object, so the file preserves the order things
+    actually happened in - better than the console, where the two streams
+    interleave by buffer.
+    """
+    log_path = os.path.join(output_dir, f'harvest-{run_id}.log')
+    # Line buffered so the log is readable while a 15-minute batch is running;
+    # errors='replace' so a stray character in a registry record cannot kill
+    # the run it was supposed to be documenting.
+    logfile = open(log_path, 'w', encoding='utf-8', errors='replace', buffering=1)
+
+    sys.stdout = _Tee(sys.stdout, logfile)
+
+    root = logging.getLogger()
+    handler = logging.StreamHandler(logfile)
+    # Reuse the format the helper modules' basicConfig already installed rather
+    # than restating it here, so the file reads exactly like the console does.
+    if root.handlers:
+        handler.setFormatter(root.handlers[0].formatter)
+    root.addHandler(handler)
+
+    return log_path
 
 
 def load_repositories(csv_path):
@@ -215,6 +274,19 @@ def main():
         print(f"\nTotal: {len(repos)} repositories")
         sys.exit(0)
 
+    # Create output directory
+    output_dir = args.output_dir
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # One validation run for the whole batch: every harmonized graph written
+    # below points its DQV measurements at this same prov:Activity. Minted here
+    # rather than at the loop so the probes below, whose warnings decide whether
+    # the run can persist anything at all, are already being logged.
+    run_id = ServiceInfoHelper.mint_run_id()
+    log_path = start_run_log(output_dir, run_id)
+    print(f"Logging this run to {log_path}")
+
     # Probe FUSEKI once before any harvesting: catches wrong credentials,
     # which an env-var presence check cannot. A failed probe does NOT stop
     # the run — harvesting works without the store and its results are kept
@@ -241,19 +313,15 @@ def main():
         print("and the repositories' own metadata only.")
         print("Check the FAIRSHARING_USERNAME / FAIRSHARING_PASSWORD environment variables.")
 
-    # Create output directory
-    output_dir = args.output_dir
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
     # Start harvesting
     start_time = datetime.now()
-    # One validation run for the whole batch: every harmonized graph written below
-    # points its DQV measurements at this same prov:Activity.
-    run_id = ServiceInfoHelper.mint_run_id()
     print(f"\n{'='*60}")
     print(f"FIDELIS Repository Harvest - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Validation run: {run_id}")
+    # Repeated here because the CSV/filter/limit counts are printed before the
+    # log starts, so without this the log would not say how many repositories
+    # the run was meant to cover.
+    print(f"Repositories:   {len(repos)}")
     print(f"{'='*60}")
 
     results = {
