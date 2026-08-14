@@ -7,6 +7,7 @@ import logging
 
 from rdflib import Graph
 
+from repo_harvester_server.helper.HarvestSession import build_session
 from repo_harvester_server.helper.RepositoryHarmonizer import RepositoryHarmonizer
 
 logging.basicConfig(
@@ -41,7 +42,7 @@ class RepositoryHarvester:
 
 
     def __init__(self, catalog_url, run_id=None, re3data_harvester=None,
-                 fairsharing_harvester=None, repository_name=None):
+                 fairsharing_harvester=None, repository_name=None, session=None):
         self.catalog_url = catalog_url
         # The repository's real name, when the caller knows it. A registry
         # search by name beats one by a name guessed from the hostname, which
@@ -74,17 +75,16 @@ class RepositoryHarvester:
 
         self.fuseki = FUSEKIHelper()
 
+        # One guarded session for the landing page and everything the page then
+        # points us at. It applies the polite User-Agent, a default timeout, and
+        # the address checks - on the initial fetch and on each redirect hop.
+        self.session = session or build_session()
+
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)
 
-        # Use a polite User-Agent for research harvesting
-        headers = {
-            'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        }
-
         try:
-            response = requests.get(self.catalog_url, headers=headers, timeout=10)
+            response = self.session.get(self.catalog_url, timeout=10)
             response.raise_for_status()
             #using the canonical url to identify the resource
             if response.url != self.catalog_url:
@@ -93,7 +93,10 @@ class RepositoryHarvester:
                 self.catalog_url = response.url
             self.catalog_html = response.text
             self.catalog_header = response.headers
-            self.metadata_helper = MetadataHelper(self.catalog_url, self.catalog_html, self.catalog_header)
+            self.metadata_helper = MetadataHelper(
+                self.catalog_url, self.catalog_html, self.catalog_header,
+                session=self.session,
+            )
             self.logger.info('Catalog URL harvested: '+ self.catalog_url)
         except requests.exceptions.RequestException as e:
             self.logger.error("Failed to fetch URI: %s", self.catalog_url)
