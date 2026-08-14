@@ -230,18 +230,34 @@ class RepositoryHarvester:
     def harvest_registry_metadata(self):
         """
         Orchestrates harvesting from external registries with cross-referencing.
+
+        A registry switched off by configuration is skipped silently here and
+        reported through self.disabled_registries. It must never reach
+        degraded_sources: that list means "we tried and could not", and
+        conflating the two tells a repository operator their record is missing
+        from a registry we never asked.
         """
         self.logger.info("--- Starting Registry Harvesting ---")
+        if self.disabled_registries:
+            self.logger.info(
+                "Registries switched off by configuration: %s",
+                ', '.join(self.disabled_registries),
+            )
 
-        re3data_harvester = self.re3data_harvester or Re3DataHarvester()
-        fairsharing_harvester = self.fairsharing_harvester or FAIRsharingHarvester()
+        re3data_harvester = None
+        if 're3data' in self.enabled_registries:
+            re3data_harvester = self.re3data_harvester or Re3DataHarvester()
+        fairsharing_harvester = None
+        if 'fairsharing' in self.enabled_registries:
+            fairsharing_harvester = self.fairsharing_harvester or FAIRsharingHarvester()
 
         re3data_meta = None
         fairsharing_meta = None
 
         # 1. First pass on re3data
-        re3_urls = '|'.join(self.catalog_ids) # in case more than one URL is know (e.g. via redirect)
-        re3data_meta = self._try_registry('re3data', re3data_harvester.harvest, re3_urls)
+        if re3data_harvester:
+            re3_urls = '|'.join(self.catalog_ids) # in case more than one URL is know (e.g. via redirect)
+            re3data_meta = self._try_registry('re3data', re3data_harvester.harvest, re3_urls)
 
         # 2. Harvest FAIRsharing, using re3data's findings if available
         fairsharing_id = None
@@ -252,18 +268,19 @@ class RepositoryHarvester:
                     fairsharing_id = identifier
                     break
 
-        if fairsharing_id:
-            fairsharing_meta = self._try_registry(
-                'fairsharing', fairsharing_harvester.harvest_by_id, fairsharing_id
-            )
-        else:
-            fairsharing_meta = self._try_registry(
-                'fairsharing', fairsharing_harvester.harvest,
-                self.catalog_url, self.repository_name,
-            )
+        if fairsharing_harvester:
+            if fairsharing_id:
+                fairsharing_meta = self._try_registry(
+                    'fairsharing', fairsharing_harvester.harvest_by_id, fairsharing_id
+                )
+            else:
+                fairsharing_meta = self._try_registry(
+                    'fairsharing', fairsharing_harvester.harvest,
+                    self.catalog_url, self.repository_name,
+                )
 
         # 3. Second pass on re3data (bridge), if the first pass failed
-        if not re3data_meta and fairsharing_meta:
+        if re3data_harvester and not re3data_meta and fairsharing_meta:
             # Try to find re3data ID in FAIRsharing metadata
             re3data_id = None
             for identifier in fairsharing_meta.get('identifier', []):
