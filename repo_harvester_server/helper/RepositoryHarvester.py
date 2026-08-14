@@ -7,6 +7,7 @@ import logging
 
 from rdflib import Graph
 
+from repo_harvester_server import config
 from repo_harvester_server.helper.HarvestSession import build_session
 from repo_harvester_server.helper.RepositoryHarmonizer import RepositoryHarmonizer
 
@@ -40,9 +41,15 @@ class RepositoryHarvester:
         'fairsharing': 'FAIRsharing.org Registry Harvesting'
     }
 
+    # The registries this harvester knows how to consult. Used to work out what
+    # a configuration has switched *off*, which the demo page reports separately
+    # from what it tried and failed to reach.
+    REGISTRY_NAMES = ('re3data', 'fairsharing')
+
 
     def __init__(self, catalog_url, run_id=None, re3data_harvester=None,
-                 fairsharing_harvester=None, repository_name=None, session=None):
+                 fairsharing_harvester=None, repository_name=None, session=None,
+                 enabled_registries=None, persist=None):
         self.catalog_url = catalog_url
         # The repository's real name, when the caller knows it. A registry
         # search by name beats one by a name guessed from the hostname, which
@@ -69,6 +76,21 @@ class RepositoryHarvester:
         # limited, unreachable). The repo still counts as harvested, but its
         # record is incomplete and the run must say so.
         self.degraded_sources = []
+
+        # What this harvester is configured to do. A "mode" belongs to the
+        # instance, not to the process: one deployment serves interactive
+        # requests with no credentials while a batch on another machine
+        # persists everything.
+        self.enabled_registries = (
+            [str(name).strip().lower() for name in enabled_registries]
+            if enabled_registries is not None
+            else list(config.ENABLED_REGISTRIES)
+        )
+        self.disabled_registries = [
+            name for name in self.REGISTRY_NAMES if name not in self.enabled_registries
+        ]
+        self.persist = config.PERSISTENCE_ENABLED if persist is None else bool(persist)
+
         self.check_environment_variables()
 
         self.service_helper = ServiceInfoHelper()
@@ -103,21 +125,27 @@ class RepositoryHarvester:
 
 
     def check_environment_variables(self):
-        # to sucessfully perform the harvesting we need the FAIRsharing credentials as ENV variables
-        # to be able to store the harvested metadata in FUSEKI we need FUSEKI credentials as ENV variables
+        """Report only the credentials this harvester's configuration needs.
+
+        A blanket check logs four errors per request on a deployment that
+        deliberately has no registry credentials and no triple store, which
+        makes a healthy service look broken.
+        """
         all_variables_available = True
-        if not os.environ.get('FAIRSHARING_USERNAME'):
-            self.logger.error("FAIRSHARING_USERNAME (OS env variable) not set – please define it before running")
-            all_variables_available = False
-        if not os.environ.get('FAIRSHARING_PASSWORD'):
-            self.logger.error("FAIRSHARING_PASSWORD (OS env variable) not set – please define it before running")
-            all_variables_available = False
-        if not os.environ.get('FUSEKI_USERNAME'):
-            self.logger.error("FUSEKI_USERNAME not set (OS env variable) not set – please define it before running")
-            all_variables_available = False
-        if not os.environ.get('FUSEKI_PASSWORD'):
-            self.logger.error("FUSEKI_PASSWORD not set (OS env variable) not set – please define it before running")
-            all_variables_available = False
+        if 'fairsharing' in self.enabled_registries:
+            if not os.environ.get('FAIRSHARING_USERNAME'):
+                self.logger.error("FAIRSHARING_USERNAME (OS env variable) not set – please define it before running")
+                all_variables_available = False
+            if not os.environ.get('FAIRSHARING_PASSWORD'):
+                self.logger.error("FAIRSHARING_PASSWORD (OS env variable) not set – please define it before running")
+                all_variables_available = False
+        if self.persist:
+            if not os.environ.get('FUSEKI_USERNAME'):
+                self.logger.error("FUSEKI_USERNAME not set (OS env variable) not set – please define it before running")
+                all_variables_available = False
+            if not os.environ.get('FUSEKI_PASSWORD'):
+                self.logger.error("FUSEKI_PASSWORD not set (OS env variable) not set – please define it before running")
+                all_variables_available = False
 
         return all_variables_available
 
