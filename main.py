@@ -1,23 +1,8 @@
 #!/usr/bin/env python3
-
-import connexion
-import os
-from flask import current_app
-
-def create_app():
-    # Point to the location of swagger.yaml inside the package
-    base_dir = os.path.abspath(os.path.dirname(__file__))
-    swagger_dir = os.path.join(base_dir, 'repo_harvester_server', 'swagger')
-
-    app = connexion.App(__name__, specification_dir=swagger_dir)
-    app.add_api('swagger.yaml', arguments={'title': 'RepoInfoHarvester'}, pythonic_params=True)
-    
-    return app
-
-def main():
-    app = create_app()
-    print("Starting Harvester Server on port 8080...")
-    app.run(host='0.0.0.0', port=8080)
+"""Development entry point. The application itself lives in the package, so an
+installed copy can be served without the checkout: see repo_harvester_server/app.py.
+"""
+from repo_harvester_server.app import create_app, main
 
 if __name__ == '__main__':
     main()

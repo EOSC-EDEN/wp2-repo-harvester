@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}EDEN Repository Harvester{% endblock %}</title>
+<style>
+  :root { --ink: #1c1c1c; --muted: #5c5c5c; --line: #d8d8d8;
+          --ok: #1a6b2f; --gap: #8a4b00; --off: #5c5c5c; --warn: #8a1a1a; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         line-height: 1.5; color: var(--ink); margin: 0;
+         padding: 1.5rem clamp(1rem, 5vw, 4rem); max-width: 60rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .5rem;
+       border-bottom: 1px solid var(--line); padding-bottom: .25rem; }
+  .banner { background: #fff8e1; border: 1px solid #e6c86a; border-radius: 4px;
+            padding: .6rem .8rem; font-size: .9rem; margin: .75rem 0 1.5rem; }
+  form { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+  input[type=url], input[type=text] { flex: 1 1 24rem; padding: .5rem;
+            border: 1px solid var(--line); border-radius: 4px; font-size: 1rem; }
+  button { padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer;
+           border: 1px solid var(--ink); background: var(--ink); color: #fff;
+           border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: .85rem;
+       text-transform: uppercase; letter-spacing: .03em; }
+  .status-found { color: var(--ok); font-weight: 600; }
+  .status-missing { color: var(--gap); font-weight: 600; }
+  .status-not_checked, .status-disabled, .status-no_record { color: var(--off); }
+  .status-unavailable { color: var(--warn); font-weight: 600; }
+  .note { color: var(--muted); font-size: .9rem; }
+  .error { border-left: 3px solid var(--warn); padding-left: .8rem; }
+  pre { background: #f6f6f6; padding: .8rem; border-radius: 4px;
+        overflow-x: auto; font-size: .85rem; }
+  footer { margin-top: 3rem; padding-top: .75rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .9rem; }
+  code { font-size: .9em; word-break: break-all; }
+</style>
+</head>
+<body>
+<header>
+  <h1>EDEN Repository Harvester</h1>
+  <p class="note">See what this repository landing page exposes to an automated harvester.</p>
+  <p class="banner">
+    Experimental EDEN preview. No availability guarantee, no authentication,
+    nothing is stored. Do not submit anything sensitive.
+  </p>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<footer>
+  <p>EOSC EDEN WP2 &middot; <a href="/api/ui/">JSON API</a></p>
+</footer>
+</body>
+</html>
