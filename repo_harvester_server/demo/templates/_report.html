@@ -1,0 +1,137 @@
+{% set self_hosted_status = {
+    'found': ('Found', 'status-found'),
+    'missing': ('Not found', 'status-missing'),
+    'not_checked': ('Not checked', 'status-not_checked')
+} %}
+{% set registry_status = {
+    'found': ('Record found', 'status-found'),
+    'no_record': ('No record', 'status-no_record'),
+    'unavailable': ('Could not be consulted', 'status-unavailable'),
+    'disabled': ('Not consulted (switched off in this deployment)', 'status-disabled'),
+    'misconfigured': ('Not consulted (credentials not configured for this deployment)', 'status-misconfigured')
+} %}
+
+{# The records belonging to the self-hosted section: whichever exported
+   records carry the @id prefix of a source that appears in report.self_hosted.
+   Built from report.self_hosted rather than a hardcoded extractor list, so a
+   new extractor lands here automatically. #}
+{% set self_hosted_sources = report.self_hosted | map(attribute='source') | list %}
+{% set self_hosted_records = [] %}
+{% for record in report.records %}
+  {% for source in self_hosted_sources %}
+    {% if record is mapping and record.get('@id', '').startswith('eden://harvester/' + source + '/') %}
+      {% set _ = self_hosted_records.append(record) %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+
+<h2>What your landing page exposes</h2>
+
+<p class="note">
+  Harvested from <code>{{ report.canonical_url }}</code>
+  {%- if report.canonical_url != report.submitted_url %},
+  which <code>{{ report.submitted_url }}</code> redirects to{% endif %}.
+</p>
+
+{% if not report.page_fetched %}
+<p class="error">
+  The landing page could not be fetched, so nothing could be read from it.
+  Anything below comes from the registries.
+</p>
+{% endif %}
+
+{% if report.self_hosted %}
+<div class="split">
+  <div>
+    <table>
+      <thead><tr><th>What was looked for</th><th>Result</th></tr></thead>
+      <tbody>
+      {% for row in report.self_hosted %}
+        {% set label, css = self_hosted_status.get(row.status, (row.status, '')) %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td class="{{ css }}">{{ label }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="note">
+      &ldquo;Not found&rdquo; means the check ran and your page did not expose it. &ldquo;Not checked&rdquo; means the harvest
+      stopped before reaching that check.
+    </p>
+  </div>
+  <div>
+    {% if self_hosted_records %}
+    <details open>
+      <summary>Raw records (JSON)</summary>
+      <pre>{{ self_hosted_records | tojson(indent=2) }}</pre>
+    </details>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<h2>Services discovered</h2>
+
+{% if report.services %}
+<div class="split">
+  <div>
+    <table>
+      <thead><tr><th>Endpoint</th><th>Type</th><th>Conforms to</th></tr></thead>
+      <tbody>
+      {% for service in report.services %}
+        <tr>
+          <td><code>{{ service.get('dcat:endpointURL') or service.get('@id') or '—' }}</code></td>
+          <td>{{ service.get('dct:type') or service.get('dct:title') or '' }}</td>
+          <td><code>{{ service.get('dct:conformsTo') or '' }}</code></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <details open>
+      <summary>Raw services (JSON)</summary>
+      <pre>{{ report.services | tojson(indent=2) }}</pre>
+    </details>
+  </div>
+</div>
+{% else %}
+<p class="note">No services were discovered on this page.</p>
+{% endif %}
+
+<div class="registries">
+{% for registry in report.registries %}
+<div class="registry-card">
+{% if registry.record %}
+<h2>{{ registry.display_name }} summary</h2>
+{% else %}
+<h2>{{ registry.display_name }}</h2>
+{% endif %}
+{% set label, css = registry_status.get(registry.status, (registry.status, '')) %}
+<p class="{{ css }}">{{ label }}</p>
+{% if registry.record %}
+{% set topic = registry.record.get('foaf:primaryTopic', {}) %}
+<table>
+  <tbody>
+    {% if topic.get('dct:title') %}
+    <tr><th>Title</th><td>{{ topic['dct:title'] }}</td></tr>
+    {% endif %}
+    {% if topic.get('dct:description') %}
+    <tr><th>Description</th><td>{{ topic['dct:description'] }}</td></tr>
+    {% endif %}
+    {% if topic.get('@id') %}
+    <tr><th>Identifier</th><td><code>{{ topic['@id'] }}</code></td></tr>
+    {% endif %}
+  </tbody>
+</table>
+<p class="note">Source: {{ registry.label }}. Shown separately &mdash; nothing on this
+page merges sources. This table is a subset of the full record below.</p>
+<details>
+  <summary>Full {{ registry.display_name }} record (JSON)</summary>
+  <pre>{{ registry.record | tojson(indent=2) }}</pre>
+</details>
+{% endif %}
+</div>
+{% endfor %}
+</div>
