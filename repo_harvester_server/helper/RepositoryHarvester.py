@@ -76,6 +76,11 @@ class RepositoryHarvester:
         # limited, unreachable). The repo still counts as harvested, but its
         # record is incomplete and the run must say so.
         self.degraded_sources = []
+        # Which extractors we got as far as running. What a page does *not*
+        # expose is the actionable half of a diagnostic report, and a missing
+        # entry in self.metadata cannot distinguish "checked, found nothing"
+        # from "an earlier extractor raised and we never got here".
+        self.attempted_sources = []
 
         # What this harvester is configured to do. A "mode" belongs to the
         # instance, not to the process: one deployment serves interactive
@@ -324,18 +329,30 @@ class RepositoryHarvester:
         self.logger.info("--- Starting Self-Hosted Harvesting ---")
         mode = 'simple'
         try:
+            self.attempted_sources.append('embedded_jsonld')
             self.merge_metadata(self.metadata_helper.get_embedded_jsonld_metadata(mode), 'embedded_jsonld')
 
+            self.attempted_sources.append('meta_tags')
             self.merge_metadata(self.metadata_helper.get_html_meta_tags_metadata(), 'meta_tags')
+
+            self.attempted_sources.append('linked_jsonld')
             self.metadata_helper.signposting_helper.logger.info("Trying to find metadata using signposting links")
             signposting_links = self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json')
             if not signposting_links:
                 self.metadata_helper.signposting_helper.logger.warning("No signposting links found")
             for link in signposting_links:
                 self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
+
+            self.attempted_sources.append('fairicat_services')
             self.merge_metadata(self.metadata_helper.get_fairicat_metadata(), 'fairicat_services')
+
+            self.attempted_sources.append('feed_services')
             self.merge_metadata(self.metadata_helper.get_feed_metadata(), 'feed_services')
+
+            self.attempted_sources.append('open_search')
             self.merge_metadata(self.metadata_helper.get_opensearch_metadata(), 'open_search')
+
+            self.attempted_sources.append('sitemap_service')
             self.merge_metadata(self.metadata_helper.get_sitemap_service_metadata(), 'sitemap_service')
             self.logger.info("--- Finished Self-Hosted Harvesting ---")
         except Exception as e:
