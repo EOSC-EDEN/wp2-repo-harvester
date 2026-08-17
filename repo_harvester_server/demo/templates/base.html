@@ -4,18 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}EDEN Repository Harvester{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.ico">
 <style>
   :root { --ink: #1c1c1c; --muted: #5c5c5c; --line: #d8d8d8;
           --ok: #1a6b2f; --gap: #8a4b00; --off: #5c5c5c; --warn: #8a1a1a; }
+  /* No max-width here on purpose: this page is mostly tables, JSON and
+     cards, and those should use whatever width the visitor's screen gives
+     them. Only the prose elements below (.note, .banner, .error, the header
+     tagline) get their own reading-width cap, since long paragraph lines are
+     what actually get hard to follow when stretched - not a table row. */
   body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
          line-height: 1.5; color: var(--ink); margin: 0;
-         padding: 1.5rem clamp(1rem, 5vw, 4rem); max-width: 60rem; }
+         padding: 1.5rem clamp(1rem, 5vw, 4rem); }
   h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
   h2 { font-size: 1.15rem; margin: 2rem 0 .5rem;
        border-bottom: 1px solid var(--line); padding-bottom: .25rem; }
   .banner { background: #fff8e1; border: 1px solid #e6c86a; border-radius: 4px;
-            padding: .6rem .8rem; font-size: .9rem; margin: .75rem 0 1.5rem; }
-  form { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+            padding: .6rem .8rem; font-size: .9rem; margin: .75rem 0 1.5rem;
+            max-width: 60rem; }
+  form { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; max-width: 60rem; }
   input[type=url], input[type=text] { flex: 1 1 24rem; padding: .5rem;
             border: 1px solid var(--line); border-radius: 4px; font-size: 1rem; }
   button { padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer;
@@ -28,12 +35,44 @@
        text-transform: uppercase; letter-spacing: .03em; }
   .status-found { color: var(--ok); font-weight: 600; }
   .status-missing { color: var(--gap); font-weight: 600; }
-  .status-not_checked, .status-disabled, .status-no_record { color: var(--off); }
+  .status-not_checked, .status-disabled, .status-no_record, .status-misconfigured { color: var(--off); }
   .status-unavailable { color: var(--warn); font-weight: 600; }
-  .note { color: var(--muted); font-size: .9rem; }
-  .error { border-left: 3px solid var(--warn); padding-left: .8rem; }
+  .note { color: var(--muted); font-size: .9rem; max-width: 60rem; }
+  .error { border-left: 3px solid var(--warn); padding-left: .8rem; max-width: 60rem; }
   pre { background: #f6f6f6; padding: .8rem; border-radius: 4px;
         overflow-x: auto; font-size: .85rem; }
+  details { margin: .75rem 0; }
+  summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  /* Both grids below always hold exactly two items today (REGISTRY_NAMES,
+     and the table+JSON pair each split section builds). An auto-fit/minmax
+     column count is calibrated against a specific container width - it does
+     the wrong thing once the container has no max-width and can be
+     arbitrarily wide, because extra phantom tracks can fit at the minimum
+     size and then collapse unevenly (this bit us once already, at a bounded
+     960px width). A fixed two-column breakpoint has no such ceiling: it is
+     exactly two columns above it and exactly one below it, at any width. */
+  .registries { display: grid; grid-template-columns: 1fr;
+                gap: 1.5rem; align-items: start; margin-top: 1rem; }
+  .registry-card { border: 1px solid var(--line); border-radius: 4px; padding: 1rem; }
+  .registry-card h2 { margin-top: 0; }
+  .split { display: grid; grid-template-columns: 1fr;
+           gap: 1.5rem; align-items: start; margin: 1rem 0; }
+  @media (min-width: 48rem) {
+    .registries, .split { grid-template-columns: 1fr 1fr; }
+  }
+  /* The found/missing and services tables have short cell content (a
+     label, a status word, a URL) - stretched to fill a much wider column
+     now that body has no max-width, they leave a stranded band of empty
+     space after the last column. Content-sized, capped by the column, is
+     the honest width for this specific content; still full column width
+     whenever the content actually needs it (e.g. long service URLs). */
+  .split table { width: auto; max-width: 100%; }
+  /* Left column is a short table; the JSON on the right is often many times
+     its height. Left unbounded, the row grows to the JSON's full height and
+     leaves the table stranded above a wall of empty space. A capped,
+     independently-scrolling pane keeps the row a sane height while the JSON
+     stays open and readable. */
+  .split pre { max-height: 22rem; overflow-y: auto; }
   footer { margin-top: 3rem; padding-top: .75rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .9rem; }
   code { font-size: .9em; word-break: break-all; }

@@ -46,6 +46,21 @@ class RepositoryHarvester:
     # from what it tried and failed to reach.
     REGISTRY_NAMES = ('re3data', 'fairsharing')
 
+    # How each registry writes its own name, for display. Kept beside
+    # REGISTRY_NAMES so there is one place that knows about registries.
+    REGISTRY_DISPLAY_NAMES = {
+        're3data': 're3data',
+        'fairsharing': 'FAIRsharing',
+    }
+
+    # Which environment variables each registry needs before it can be used at
+    # all. A registry that is switched on but has none of these is misconfigured
+    # - a different thing from unreachable, and our fault rather than theirs.
+    REGISTRY_CREDENTIAL_ENV = {
+        'fairsharing': ('FAIRSHARING_USERNAME', 'FAIRSHARING_PASSWORD'),
+        're3data': (),
+    }
+
 
     def __init__(self, catalog_url, run_id=None, re3data_harvester=None,
                  fairsharing_harvester=None, repository_name=None, session=None,
@@ -93,6 +108,13 @@ class RepositoryHarvester:
         )
         self.disabled_registries = [
             name for name in self.REGISTRY_NAMES if name not in self.enabled_registries
+        ]
+        self.misconfigured_registries = [
+            name for name in self.enabled_registries
+            if any(
+                not os.environ.get(var)
+                for var in self.REGISTRY_CREDENTIAL_ENV.get(name, ())
+            )
         ]
         self.persist = config.PERSISTENCE_ENABLED if persist is None else bool(persist)
 

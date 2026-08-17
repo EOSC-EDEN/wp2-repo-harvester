@@ -12,6 +12,10 @@
 <p class="error">{{ message }}</p>
 {% endif %}
 
-{% block report %}{% endblock %}
+{% block report %}
+{% if report %}
+  {% include "_report.html" %}
+{% endif %}
+{% endblock %}
 
 {% endblock %}

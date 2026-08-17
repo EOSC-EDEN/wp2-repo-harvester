@@ -32,11 +32,10 @@ def _repo_harvester(**kwargs):
     __init__ deliberately catches only RequestException, and widening that
     catch to satisfy a test would swallow real programming errors.
     """
-    with mock.patch(
-        'repo_harvester_server.helper.RepositoryHarvester.requests.get',
-        side_effect=requests.exceptions.ConnectionError('no network in tests'),
-    ):
-        return RepositoryHarvester('https://example.org/', **kwargs)
+    session = mock.Mock()
+    session.get.side_effect = requests.exceptions.ConnectionError('no network in tests')
+    kwargs.setdefault('session', session)
+    return RepositoryHarvester('https://example.org/', **kwargs)
 
 
 class TestDegradedSources:
@@ -598,3 +597,78 @@ class TestRe3DataRecordFetchHonesty:
         assert result is not None
         assert result['title'] == 'Second'
         assert harvester.session.request.call_count == 3
+
+
+class TestRegistryMetadataSurvivesFailedPageFetch:
+    """Registry metadata must be exported even when the landing page is dead.
+
+    In the 2026-08-12 batch, ISSDA, Bgee and Rhea each had a verified re3data
+    record and a matched FAIRsharing record, yet exported nothing and reported
+    'Metadata: No, Services: 0'. Their landing page fetch had failed, and the
+    export path reached its DCAT mapper only through the MetadataHelper built
+    from that page. Registry metadata needs no landing page.
+    """
+
+    def test_registry_metadata_is_exported_when_page_fetch_failed(self, harvester_credentials):
+        harvester = _repo_harvester()
+        # The trigger: __init__'s fetch raised, so no page-derived helper exists.
+        assert harvester.metadata_helper is None
+
+        harvester.merge_metadata({'title': 'Irish Social Science Data Archive'}, 're3data')
+        harvester.merge_metadata({'title': 'Irish Social Science Data Archive'}, 'fairsharing')
+
+        records = harvester.export_and_save(save=False)
+
+        assert [r['@id'] for r in records] == [
+            'eden://harvester/re3data/https://example.org/',
+            'eden://harvester/fairsharing/https://example.org/',
+        ]
+
+    def test_exported_record_carries_the_registry_content(self, harvester_credentials):
+        harvester = _repo_harvester()
+        harvester.merge_metadata(
+            {'title': 'Bgee', 'description': 'Gene expression data'}, 're3data'
+        )
+
+        records = harvester.export_and_save(save=False)
+
+        assert len(records) == 1
+        topic = records[0]['foaf:primaryTopic']
+        assert topic['dct:title'] == 'Bgee'
+        assert topic['dct:description'] == 'Gene expression data'
+        # The catalog URL still identifies the repository, dead page or not.
+        assert topic['@id'] == 'https://example.org/'
+
+    def test_export_makes_no_http_request(self, harvester_credentials):
+        """Exporting must not touch the network.
+
+        The page-less MetadataHelper is built without a URL because
+        SignPostingHelper fetches any URL it is given, with no timeout. Passing
+        one made AgroPortal hang on a dead landing page and fail the whole
+        repository in the 2026-08-13 batch - a repository the export fix was
+        supposed to rescue, not break.
+        """
+        harvester = _repo_harvester()
+        harvester.merge_metadata({'title': 'AgroPortal'}, 'fairsharing')
+
+        with mock.patch(
+            'repo_harvester_server.helper.MetadataHelper.build_session'
+        ) as build:
+            records = harvester.export_and_save(save=False)
+
+        build.return_value.get.assert_not_called()
+        assert len(records) == 1
+
+    def test_successful_fetch_still_uses_the_page_derived_helper(self, harvester_credentials):
+        """The fallback must not displace the real helper when the page loaded."""
+        harvester = _repo_harvester()
+        harvester.metadata_helper = mock.Mock()
+        harvester.metadata_helper.export.return_value = {
+            'foaf:primaryTopic': {'dct:title': 'From the page helper'}
+        }
+        harvester.merge_metadata({'title': 'whatever'}, 're3data')
+
+        records = harvester.export_and_save(save=False)
+
+        harvester.metadata_helper.export.assert_called_once()
+        assert records[0]['foaf:primaryTopic']['dct:title'] == 'From the page helper'

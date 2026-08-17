@@ -77,10 +77,13 @@ def _self_hosted_rows(harvester, found_sources):
 
 def _registry_rows(harvester, found_sources, records):
     """One row per registry, keeping 'switched off' distinct from 'unreachable'."""
+    display_names = getattr(harvester, 'REGISTRY_DISPLAY_NAMES', {})
     rows = []
     for name in harvester.REGISTRY_NAMES:
         if name in harvester.disabled_registries:
             status = 'disabled'
+        elif name in getattr(harvester, 'misconfigured_registries', ()):
+            status = 'misconfigured'
         elif name in harvester.degraded_sources:
             status = 'unavailable'
         elif name in found_sources:
@@ -95,6 +98,7 @@ def _registry_rows(harvester, found_sources, records):
         )
         rows.append({
             'name': name,
+            'display_name': display_names.get(name, name),
             'label': harvester.extractors.get(name, name),
             'status': status,
             'record': record,
