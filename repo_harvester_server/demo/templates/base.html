@@ -67,12 +67,25 @@
      the honest width for this specific content; still full column width
      whenever the content actually needs it (e.g. long service URLs). */
   .split table { width: auto; max-width: 100%; }
+  /* A grid item's automatic minimum width defaults to its content's natural
+     size - an un-wrapped table can be that wide, and that minimum belongs to
+     the grid item itself, not to .table-scroll one level further in, so
+     wrapping the table alone cannot cap it. Overriding it here is what lets
+     .table-scroll's own overflow-x:auto actually engage on a narrow screen,
+     instead of the whole grid track - and the page under it - stretching to
+     fit the table. Both grids need it: .registry-card's Title/Description
+     cells are plain text with no word-break, so a long unbroken value there
+     is exactly as capable of forcing .registries wide as a table cell is
+     in .split. */
+  .split > div, .registries > div { min-width: 0; }
   /* Left column is a short table; the JSON on the right is often many times
      its height. Left unbounded, the row grows to the JSON's full height and
      leaves the table stranded above a wall of empty space. A capped,
      independently-scrolling pane keeps the row a sane height while the JSON
      stays open and readable. */
   .split pre { max-height: 22rem; overflow-y: auto; }
+  .logo { height: 3rem; width: auto; display: block; margin-bottom: .75rem; }
+  .table-scroll { overflow-x: auto; }
   footer { margin-top: 3rem; padding-top: .75rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .9rem; }
   code { font-size: .9em; word-break: break-all; }
@@ -80,6 +93,7 @@
 </head>
 <body>
 <header>
+  <img class="logo" src="/logo-eden.svg" alt="EOSC EDEN">
   <h1>EDEN Repository Harvester</h1>
   <p class="note">See what this repository landing page exposes to an automated harvester.</p>
   <p class="banner">

@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Packaging (pip install . builds these in place; deploy.sh runs that
+# on the VM on every deploy, so they must not accumulate there)
+build/
+*.egg-info/
+
 # Harvest folder
 output/
 

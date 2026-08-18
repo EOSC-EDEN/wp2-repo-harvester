@@ -43,6 +43,7 @@
 {% if report.self_hosted %}
 <div class="split">
   <div>
+    <div class="table-scroll">
     <table>
       <thead><tr><th>What was looked for</th><th>Result</th></tr></thead>
       <tbody>
@@ -55,6 +56,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
     <p class="note">
       &ldquo;Not found&rdquo; means the check ran and your page did not expose it. &ldquo;Not checked&rdquo; means the harvest
       stopped before reaching that check.
@@ -76,6 +78,7 @@
 {% if report.services %}
 <div class="split">
   <div>
+    <div class="table-scroll">
     <table>
       <thead><tr><th>Endpoint</th><th>Type</th><th>Conforms to</th></tr></thead>
       <tbody>
@@ -88,6 +91,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
   <div>
     <details open>
@@ -112,6 +116,7 @@
 <p class="{{ css }}">{{ label }}</p>
 {% if registry.record %}
 {% set topic = registry.record.get('foaf:primaryTopic', {}) %}
+<div class="table-scroll">
 <table>
   <tbody>
     {% if topic.get('dct:title') %}
@@ -125,6 +130,7 @@
     {% endif %}
   </tbody>
 </table>
+</div>
 <p class="note">Source: {{ registry.label }}. Shown separately &mdash; nothing on this
 page merges sources. This table is a subset of the full record below.</p>
 <details>

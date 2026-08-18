@@ -19,7 +19,7 @@ docker run -p 8080:8080 \
 
 ```bash
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install .
 python main.py
 ```
 

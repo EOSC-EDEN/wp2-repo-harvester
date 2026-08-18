@@ -151,27 +151,34 @@ class RepositoryHarvester:
             self.logger.error("Failed to fetch URI: %s", self.catalog_url)
 
 
+    def _report_missing(self, variable):
+        self.logger.error(
+            "%s (OS env variable) not set – please define it before running", variable
+        )
+
     def check_environment_variables(self):
         """Report only the credentials this harvester's configuration needs.
 
         A blanket check logs four errors per request on a deployment that
         deliberately has no registry credentials and no triple store, which
         makes a healthy service look broken.
+
+        The registry half reads REGISTRY_CREDENTIAL_ENV rather than naming
+        variables inline, so a registry's credential requirements live in one
+        place - a second, hardcoded list here could drift from it.
         """
         all_variables_available = True
-        if 'fairsharing' in self.enabled_registries:
-            if not os.environ.get('FAIRSHARING_USERNAME'):
-                self.logger.error("FAIRSHARING_USERNAME (OS env variable) not set – please define it before running")
-                all_variables_available = False
-            if not os.environ.get('FAIRSHARING_PASSWORD'):
-                self.logger.error("FAIRSHARING_PASSWORD (OS env variable) not set – please define it before running")
-                all_variables_available = False
+        for registry in self.enabled_registries:
+            for var in self.REGISTRY_CREDENTIAL_ENV.get(registry, ()):
+                if not os.environ.get(var):
+                    self._report_missing(var)
+                    all_variables_available = False
         if self.persist:
             if not os.environ.get('FUSEKI_USERNAME'):
-                self.logger.error("FUSEKI_USERNAME not set (OS env variable) not set – please define it before running")
+                self._report_missing('FUSEKI_USERNAME')
                 all_variables_available = False
             if not os.environ.get('FUSEKI_PASSWORD'):
-                self.logger.error("FUSEKI_PASSWORD not set (OS env variable) not set – please define it before running")
+                self._report_missing('FUSEKI_PASSWORD')
                 all_variables_available = False
 
         return all_variables_available

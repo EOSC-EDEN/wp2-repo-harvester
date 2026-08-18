@@ -65,3 +65,9 @@ def favicon():
     """Browsers ask for this unprompted; answering it keeps one 404 warning per
     visitor out of the log, where it would bury the warnings that matter."""
     return send_from_directory(_STATIC_DIR, 'favicon.svg', mimetype='image/svg+xml')
+
+
+@demo_blueprint.get('/logo-eden.svg')
+def logo():
+    """The project logo, shown in the page header."""
+    return send_from_directory(_STATIC_DIR, 'logo-eden.svg', mimetype='image/svg+xml')
