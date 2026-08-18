@@ -1,0 +1,25 @@
+[Unit]
+Description=EDEN Repository Harvester (public demo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=harvester
+Group=harvester
+WorkingDirectory=/opt/eden-harvester
+EnvironmentFile=/etc/eden-harvester.env
+ExecStart=/opt/eden-harvester/venv/bin/uvicorn repo_harvester_server.app:app --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
