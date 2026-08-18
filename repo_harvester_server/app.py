@@ -51,7 +51,11 @@ def main():
     "harden" this back to 127.0.0.1; that is the systemd unit's job, not
     this function's.
     """
-    print("Starting Harvester Server on port 8080...")
+    # Print a URL that can actually be opened. uvicorn logs the bind address it
+    # was given, and 0.0.0.0 is a wildcard meaning "every interface", not a
+    # destination - browsers will not open it.
+    print("Starting Harvester Server: http://127.0.0.1:8080/")
+    print("Bound to all interfaces, so it is reachable from your network too.")
     app.run(host='0.0.0.0', port=8080)
 
 
