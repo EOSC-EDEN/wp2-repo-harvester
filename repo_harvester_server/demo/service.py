@@ -1,18 +1,21 @@
 """The one harvest both public faces call.
 
-Deliberately not RepositoryHarvester.harvest(): that always persists
-(export_and_save(True)) and then harmonizes, and this deployment wants
-neither. Harmonisation is a registry concern, not a diagnostic-tool concern,
-and the service is stateless - so the steps are spelled out instead.
+The steps are spelled out here rather than calling RepositoryHarvester.harvest()
+because persistence and harmonisation must follow configuration instead of
+being unconditional: the same code has to serve a stateless public demo (no
+FUSEKI_PATH, nothing written or harmonized) and a developer or batch machine
+with a triple store (FUSEKI_PATH set, behaving exactly like harvest() always
+did). config.PERSISTENCE_ENABLED is that switch.
 
-The response shape is unchanged for the JSON API: export_and_save appends to
-final_records before its `if save:` block and returns the same list either way,
-and harvest() discarded the harmonized record rather than returning it, so the
-controller was already serving raw per-source records.
+The response shape is unchanged for the JSON API either way: export_and_save
+appends to final_records before its `if save:` block and returns the same list
+regardless, and harvest() discarded the harmonized record rather than
+returning it, so the controller was already serving raw per-source records.
 """
 import logging
 import threading
 
+from repo_harvester_server import config
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 
 logging.basicConfig(
@@ -123,7 +126,11 @@ def build_report(harvester, submitted_url, records):
 
 
 def run_interactive_harvest(url):
-    """Harvest one repository for one visitor. Nothing is written anywhere.
+    """Harvest one repository for one visitor.
+
+    Whether anything is written or harmonized follows config.PERSISTENCE_ENABLED
+    (true exactly when FUSEKI_PATH is set): nothing on the stateless public
+    demo, both on a machine configured with a triple store.
 
     :param url str: the repository landing page URL.
     :raises HarvesterBusyError: every concurrent slot is taken.
@@ -134,10 +141,18 @@ def run_interactive_harvest(url):
             "All harvest slots are busy right now. Please try again in a moment."
         )
     try:
-        harvester = RepositoryHarvester(url, persist=False)
+        harvester = RepositoryHarvester(url, persist=config.PERSISTENCE_ENABLED)
         harvester.harvest_self_hosted_metadata()
         harvester.harvest_registry_metadata()
-        records = harvester.export_and_save(save=False)
+        records = harvester.export_and_save(save=config.PERSISTENCE_ENABLED)
+        if config.PERSISTENCE_ENABLED:
+            try:
+                harvester.harmonize()
+            except Exception:
+                logger.error(
+                    "Harmonization failed after harvesting %s; continuing with "
+                    "the raw per-source records.", url, exc_info=True
+                )
         return build_report(harvester, url, records)
     finally:
         _harvest_slots.release()
