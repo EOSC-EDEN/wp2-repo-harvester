@@ -59,6 +59,18 @@ def _private_targets_allowed():
     return os.environ.get(ALLOW_PRIVATE_TARGETS_ENV, '').strip().lower() in _TRUE_VALUES
 
 
+def _refuse(message):
+    """Log the refusal, then raise it.
+
+    A refusal here can be a submitted typo or it can be an address probe
+    (e.g. the AWS/GCP/Azure metadata address) - on a public endpoint the two
+    look identical unless the reason is on record, so every refusal is logged
+    at WARNING before it is raised.
+    """
+    logger.warning(message)
+    raise BlockedTargetError(message)
+
+
 def assert_target_allowed(url):
     """Raise BlockedTargetError unless this URL may be fetched.
 
@@ -67,15 +79,13 @@ def assert_target_allowed(url):
     try:
         parsed = urlparse(url)
     except ValueError as e:
-        raise BlockedTargetError(f"refusing to fetch {url}: invalid URL ({e})")
+        _refuse(f"refusing to fetch {url}: invalid URL ({e})")
 
     if parsed.scheme not in ALLOWED_SCHEMES:
-        raise BlockedTargetError(
-            f"refusing to fetch {url}: only http and https targets are followed"
-        )
+        _refuse(f"refusing to fetch {url}: only http and https targets are followed")
     host = parsed.hostname
     if not host:
-        raise BlockedTargetError(f"refusing to fetch {url}: the URL names no host")
+        _refuse(f"refusing to fetch {url}: the URL names no host")
 
     if _private_targets_allowed():
         return
@@ -83,13 +93,13 @@ def assert_target_allowed(url):
     try:
         infos = socket.getaddrinfo(host, parsed.port, proto=socket.IPPROTO_TCP)
     except (socket.gaierror, ValueError) as e:
-        raise BlockedTargetError(f"refusing to fetch {url}: {host} does not resolve ({e})")
+        _refuse(f"refusing to fetch {url}: {host} does not resolve ({e})")
 
     for info in infos:
         # Link-local addresses can carry a %scope suffix that ip_address rejects.
         address = ipaddress.ip_address(info[4][0].split('%')[0])
         if not address.is_global:
-            raise BlockedTargetError(
+            _refuse(
                 f"refusing to fetch {url}: {host} resolves to {address}, which is not "
                 "a public address"
             )

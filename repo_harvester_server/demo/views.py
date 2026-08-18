@@ -6,7 +6,7 @@ No build step, no frontend framework, no change to swagger.yaml.
 import logging
 import os
 
-from flask import Blueprint, render_template, request, send_from_directory
+from flask import Blueprint, Response, render_template, request, send_from_directory
 
 from repo_harvester_server.demo.service import (
     HarvesterBusyError,
@@ -34,6 +34,13 @@ def index():
 
     try:
         report = run_interactive_harvest(submitted_url)
+        # Rendering is inside the try on purpose: a report can reach here and
+        # still make Jinja raise (e.g. a bare string among 'services', which
+        # collect_services tolerates but the template's .get() calls do not),
+        # and that must land on the same HTML error page as any other
+        # failure - not escape as a raw application/problem+json blob with no
+        # banner, no form, and no server-side log entry.
+        return render_template('index.html', submitted_url=submitted_url, report=report)
     except HarvesterBusyError as e:
         return render_template(
             'index.html', submitted_url=submitted_url, message=str(e)
@@ -50,8 +57,6 @@ def index():
             message="That harvest could not be completed. This is not "
                     "something you did wrong - please try again in a moment.",
         ), 500
-
-    return render_template('index.html', submitted_url=submitted_url, report=report)
 
 
 @demo_blueprint.get('/healthz')
@@ -71,3 +76,17 @@ def favicon():
 def logo():
     """The project logo, shown in the page header."""
     return send_from_directory(_STATIC_DIR, 'logo-eden.svg', mimetype='image/svg+xml')
+
+
+@demo_blueprint.get('/robots.txt')
+def robots():
+    """Keep crawlers off the harvest itself.
+
+    The harvest is a GET with a query parameter, so a crawler, a Slack/Teams/
+    Mastodon link-unfurler, or browser prefetch following any pasted link
+    fires a real outbound harvest from this service - and the result may get
+    indexed. The <meta name="robots"> tag in base.html covers compliant
+    crawlers that have already fetched a page; this covers ones that check
+    robots.txt first.
+    """
+    return Response('User-agent: *\nDisallow: /\n', mimetype='text/plain')

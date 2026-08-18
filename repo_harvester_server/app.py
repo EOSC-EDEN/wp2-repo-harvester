@@ -39,9 +39,20 @@ app = create_app()
 
 
 def main():
-    """Development server. Production runs uvicorn against `app` above."""
+    """Development and container entry point. Production runs uvicorn against
+    `app` above, with the systemd unit passing --host 127.0.0.1 explicitly.
+
+    This binds 0.0.0.0 on purpose: the Dockerfile's CMD runs this function, so
+    a container's published port needs it listening on all interfaces, not
+    just loopback inside the container's own network namespace - binding
+    127.0.0.1 here makes a published port connect to nothing, and the
+    HEALTHCHECK (which runs inside the same container) would still report
+    healthy while nothing outside the container could reach it. Do not
+    "harden" this back to 127.0.0.1; that is the systemd unit's job, not
+    this function's.
+    """
     print("Starting Harvester Server on port 8080...")
-    app.run(host='127.0.0.1', port=8080)
+    app.run(host='0.0.0.0', port=8080)
 
 
 if __name__ == '__main__':

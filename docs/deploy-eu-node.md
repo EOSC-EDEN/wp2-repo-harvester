@@ -27,7 +27,12 @@ Live at <https://eden-harvester.vm.fedcloud.eu>.
     cp deploy/eden-harvester.nginx.conf /etc/nginx/conf.d/eden-harvester-limits.conf
 
 then open that copy and delete everything from `# Part 2` onwards, leaving only the `limit_req_zone` line (plus its comments), since this is only valid at the `http` level, which is where files under `conf.d/` are included.
-Then add the `location` blocks (everything from `# Part 2` onwards in `deploy/eden-harvester.nginx.conf`) to the existing TLS server block by hand.
+
+The VM already serves a stock "Welcome to nginx!" page over valid HTTPS, which means `certbot --nginx` added `listen 443 ssl` to Ubuntu's *existing* default site (`/etc/nginx/sites-enabled/default`) rather than creating a new server block - so that block already has its own `location /` (with `root /var/www/html;`). Check first:
+
+    grep -n "location /" /etc/nginx/sites-enabled/default
+
+nginx refuses two `location /` blocks in one `server{}` with `duplicate location "/"`, so **replace** that existing `location /` with all four `location` blocks from `# Part 2` onwards in `deploy/eden-harvester.nginx.conf` (the exact-match `location = /` and `location = /api/` that carry the rate limit, the prefix `location /` that does not - see the comment in that file for why they're split - and the exact-match `location = /healthz`). Take all four, not just the two rate-limited ones: it is easy to skip `location = /healthz` since it isn't part of the rate-limit story, but it carries `access_log off`, and losing it puts every uptime poll into the access log. `root /var/www/html;` in the replaced block becomes dead code once `/` proxies elsewhere; harmless to leave, but delete it too so nobody goes looking for a static site that no longer serves anything.
 
 Check both edits together with `nginx -t && systemctl reload nginx`.
 
@@ -36,6 +41,8 @@ Check both edits together with `nginx -t && systemctl reload nginx`.
     sh /opt/eden-harvester/deploy.sh
 
 `git config core.fileMode` is `false` in this repository, so the executable bit on `deploy.sh` is not tracked and will not survive a `git clone` on the VM. Running it via `sh` sidesteps that — do not rely on running it directly as `./deploy.sh`.
+
+The checkout is owned by `harvester` (the `chown -R harvester:harvester` step above); `deploy.sh` itself runs as root. Git refuses to pull a repository owned by a different uid ("detected dubious ownership"), so the script pulls as `harvester` via `sudo -u harvester git -C ... pull --ff-only` rather than as root. Only that one step is de-escalated — installing into the venv and restarting the service still need root.
 
 ## Checking it
 

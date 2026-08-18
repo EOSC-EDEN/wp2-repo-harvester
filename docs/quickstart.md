@@ -22,13 +22,16 @@ pip install .
 python main.py
 ```
 
-- API: http://localhost:8080
-- Swagger UI: http://localhost:8080/ui
+- HTML demo page: http://localhost:8080/
+- JSON API: http://localhost:8080/api/
+- Swagger UI: http://localhost:8080/api/ui/
 
 ## Harvest a Repository
 
+`GET /` (no query string) is the HTML form; `GET /?url=...` renders the same page with a report. For JSON, use the `/api` prefix instead:
+
 ```bash
-curl "http://localhost:8080/?url=https://pangaea.de"
+curl "http://localhost:8080/api/?url=https://pangaea.de"
 ```
 
 Returns JSON with repository metadata, publisher info, and discovered services.

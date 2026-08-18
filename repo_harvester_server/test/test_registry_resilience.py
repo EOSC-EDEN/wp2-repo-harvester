@@ -672,3 +672,80 @@ class TestRegistryMetadataSurvivesFailedPageFetch:
 
         harvester.metadata_helper.export.assert_called_once()
         assert records[0]['foaf:primaryTopic']['dct:title'] == 'From the page helper'
+
+
+def _self_hosted_metadata_helper(links):
+    """A metadata_helper double whose only interesting behaviour is the
+    signposting links it reports; every extractor otherwise finds nothing.
+    """
+    helper = mock.Mock()
+    for attr in (
+        'get_embedded_jsonld_metadata', 'get_html_meta_tags_metadata',
+        'get_fairicat_metadata', 'get_feed_metadata',
+        'get_opensearch_metadata', 'get_sitemap_service_metadata',
+        'get_linked_jsonld_metadata',
+    ):
+        getattr(helper, attr).return_value = None
+    helper.signposting_helper.get_links.return_value = links
+    return helper
+
+
+class TestDescribedbyLinkCap:
+    """harvest_self_hosted_metadata follows every 'describedby' link a page
+    publishes, each fetch costing up to the guarded session's read timeout.
+    An uncapped page publishing hundreds of links to slow hosts would hold
+    one of the four harvest slots for a very long time; four such submissions
+    would wedge the service while /healthz still reports ok.
+    """
+
+    def test_link_following_is_capped(self, harvester_credentials):
+        from repo_harvester_server.helper.RepositoryHarvester import MAX_DESCRIBEDBY_LINKS
+
+        harvester = _repo_harvester()
+        harvester.catalog_html = '<html></html>'
+        links = [{'link': f'https://data.example.org/record/{i}'}
+                 for i in range(MAX_DESCRIBEDBY_LINKS + 5)]
+        harvester.metadata_helper = _self_hosted_metadata_helper(links)
+
+        harvester.harvest_self_hosted_metadata()
+
+        assert harvester.metadata_helper.get_linked_jsonld_metadata.call_count == \
+            MAX_DESCRIBEDBY_LINKS
+
+    def test_truncation_is_logged(self, harvester_credentials):
+        from repo_harvester_server.helper.RepositoryHarvester import MAX_DESCRIBEDBY_LINKS
+
+        harvester = _repo_harvester()
+        harvester.catalog_html = '<html></html>'
+        num_links = MAX_DESCRIBEDBY_LINKS + 5
+        links = [{'link': f'https://data.example.org/record/{i}'}
+                 for i in range(num_links)]
+        harvester.metadata_helper = _self_hosted_metadata_helper(links)
+
+        harvester.harvest_self_hosted_metadata()
+
+        # logger.info() is also called unconditionally before truncation is
+        # even known ("Trying to find metadata using signposting links"), so
+        # asserting the mock was merely called proves nothing about the cap.
+        # Pin the actual truncation message: it must name both the number of
+        # links the page published and the cap that was applied.
+        info_calls = harvester.metadata_helper.signposting_helper.logger.info.call_args_list
+        truncation_calls = [
+            c for c in info_calls
+            if c.args and 'describedby links' in str(c.args[0])
+            and num_links in c.args and MAX_DESCRIBEDBY_LINKS in c.args
+        ]
+        assert truncation_calls, (
+            f"expected an info() call reporting {num_links} links found and "
+            f"the {MAX_DESCRIBEDBY_LINKS}-link cap; got {info_calls!r}"
+        )
+
+    def test_a_page_within_the_cap_is_unaffected(self, harvester_credentials):
+        harvester = _repo_harvester()
+        harvester.catalog_html = '<html></html>'
+        links = [{'link': 'https://data.example.org/record/1'}]
+        harvester.metadata_helper = _self_hosted_metadata_helper(links)
+
+        harvester.harvest_self_hosted_metadata()
+
+        assert harvester.metadata_helper.get_linked_jsonld_metadata.call_count == 1

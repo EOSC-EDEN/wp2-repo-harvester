@@ -23,6 +23,13 @@ from repo_harvester_server.helper.RegistryHTTP import RegistryUnavailableError
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
+# A legitimate landing page does not publish dozens of 'describedby' links.
+# Each one costs a fetch - up to the guarded session's read timeout, see
+# HarvestSession.DEFAULT_TIMEOUT - against one of the service's four harvest
+# slots, so this bounds what a single visitor's submission can cost
+# regardless of how many links the page advertises.
+MAX_DESCRIBEDBY_LINKS = 10
+
 class RepositoryHarvester:
     logger = logging.getLogger('RepositoryHarvester')
     """
@@ -102,10 +109,26 @@ class RepositoryHarvester:
         # requests with no credentials while a batch on another machine
         # persists everything.
         self.enabled_registries = (
-            [str(name).strip().lower() for name in enabled_registries]
+            [str(name).strip().lower() for name in enabled_registries if str(name).strip()]
             if enabled_registries is not None
             else list(config.ENABLED_REGISTRIES)
         )
+        # A name here that matches none of REGISTRY_NAMES is almost always a
+        # typo in EDEN_ENABLED_REGISTRIES (e.g. 're3dat'): it silently drops
+        # out of enabled_registries below, so every registry ends up reported
+        # to visitors as switched off, with nothing in the log to say why on
+        # a deployment that has no console to notice from. Name the culprit
+        # and the variable to fix; degrade rather than abort - an unrecognised
+        # name simply is not consulted, same as one explicitly turned off.
+        unrecognised_registries = [
+            name for name in self.enabled_registries if name not in self.REGISTRY_NAMES
+        ]
+        if unrecognised_registries:
+            self.logger.error(
+                "EDEN_ENABLED_REGISTRIES names unrecognised registry/registries: %s "
+                "(recognised: %s) - check that variable for a typo",
+                ', '.join(unrecognised_registries), ', '.join(self.REGISTRY_NAMES),
+            )
         self.disabled_registries = [
             name for name in self.REGISTRY_NAMES if name not in self.enabled_registries
         ]
@@ -148,7 +171,11 @@ class RepositoryHarvester:
             )
             self.logger.info('Catalog URL harvested: '+ self.catalog_url)
         except requests.exceptions.RequestException as e:
-            self.logger.error("Failed to fetch URI: %s", self.catalog_url)
+            # Include the exception, not just the URL: a refused private/
+            # metadata-service address (BlockedTargetError) and a plain typo
+            # both land here, and on a public endpoint they need to be told
+            # apart in the log.
+            self.logger.error("Failed to fetch URI: %s (%s)", self.catalog_url, e)
 
 
     def _report_missing(self, variable):
@@ -369,6 +396,12 @@ class RepositoryHarvester:
             signposting_links = self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json')
             if not signposting_links:
                 self.metadata_helper.signposting_helper.logger.warning("No signposting links found")
+            elif len(signposting_links) > MAX_DESCRIBEDBY_LINKS:
+                self.metadata_helper.signposting_helper.logger.info(
+                    "Page publishes %s describedby links; following only the first %s",
+                    len(signposting_links), MAX_DESCRIBEDBY_LINKS,
+                )
+                signposting_links = signposting_links[:MAX_DESCRIBEDBY_LINKS]
             for link in signposting_links:
                 self.merge_metadata(self.metadata_helper.get_linked_jsonld_metadata(link.get('link'), mode), 'linked_jsonld')
 

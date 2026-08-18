@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The harvest is a GET with a query parameter: an indexed or unfurled
+     result URL would trigger a real outbound harvest for whoever's link
+     gets crawled. See also /robots.txt (views.py) for bots that check it
+     first rather than the page they already fetched. -->
+<meta name="robots" content="noindex,nofollow">
 <title>{% block title %}EDEN Repository Harvester{% endblock %}</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.ico">
 <style>
