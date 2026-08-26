@@ -43,7 +43,7 @@ DEFAULT_TIMEOUT = (5, 20)
 
 ALLOWED_SCHEMES = ('http', 'https')
 
-USER_AGENT = 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)'
+USER_AGENT = 'EDEN-Harvester/1.0 (Research Project; mailto:eosceden@uni-bremen.de)'
 ACCEPT = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
 
 # Set this to harvest a repository on a private network - a local test server,
