@@ -79,7 +79,7 @@ class RepositoryHarvester:
 
         # Use a polite User-Agent for research harvesting
         headers = {
-            'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:admin@eden-fidelis.eu)',
+            'User-Agent': 'EDEN-Harvester/1.0 (Research Project; mailto:eosceden@uni-bremen.de)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
 
