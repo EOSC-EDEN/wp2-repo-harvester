@@ -1,5 +1,7 @@
 import os
 import json
+import threading
+from contextlib import contextmanager
 
 import jmespath
 import requests
@@ -26,6 +28,29 @@ GENERIC_HOST_LABELS = frozenset({
     'catalog', 'catalogue', 'portal', 'api', 'site', 'library', 'db', 'dv',
 })
 
+# How long a harvest waits for another harvest that is already talking to
+# FAIRsharing. One harvester now serves every visitor, and its work is
+# serialised, so a busy moment queues rather than overlapping. Bounded because
+# a visitor waiting behind three others must still get a page: nginx gives up
+# at 120s, and an honest "FAIRsharing could not be consulted" beats a gateway
+# error. The wait is our own queue, not their rate limiter - the log says so.
+#
+# 60.0, not 30.0: a cold harvest holds this lock across both search
+# strategies in harvest() (see harvest()'s docstring), each paying the
+# pacing gate's REQUEST_DELAY_SECONDS['fairsharing'] (7.5s) before it fires,
+# so one harvest can occupy the lock for roughly 15s. Under sustained load a
+# third concurrent visitor asking about a *distinct* URL (so not served by
+# the registry cache) could queue behind two such harvests and cross a 30s
+# cap while nothing was actually wrong, and be told FAIRsharing "could not
+# be consulted" for it. 60.0 matches RegistryCache's own waiter timeout and
+# still leaves headroom inside nginx's 120s proxy_read_timeout. This is
+# reasoned from the pacing and lock-holding arithmetic above, not measured
+# against real demo load - like REQUEST_DELAY_SECONDS in RegistryHTTP.py,
+# re-measure and adjust once a busy session gives us something to learn
+# from.
+LOCK_TIMEOUT_SECONDS = 60.0
+
+
 class FAIRsharingHarvester:
     """
     A harvester for fetching metadata from the FAIRsharing.org registry.
@@ -39,40 +64,81 @@ class FAIRsharingHarvester:
         # One session for sign-in and every search: reuses the TCP/TLS
         # connection instead of shaking hands once per request.
         self.session = requests.Session()
+        # One harvester is shared across every visitor on the public demo, so
+        # its Session and its JWT are reached by four worker threads.
+        # requests.Session is not documented thread-safe, and the sequence
+        # "read token, search, re-authenticate on 401, search again" has to be
+        # atomic or two threads both sign in and one overwrites the other's
+        # fresher token. Reentrant because harvest() -> _search_fairsharing()
+        # -> _authenticate() takes it again on the way down.
+        #
+        # Serialising is not only about safety: the 5-second pacing was
+        # measured against a single sequential stream, and four independent
+        # threads would spend four times that budget.
+        self._lock = threading.RLock()
         self._authenticate()
+
+    @contextmanager
+    def _serialized(self):
+        """Hold the harvester for this thread, or degrade rather than queue
+        forever."""
+        if not self._lock.acquire(timeout=LOCK_TIMEOUT_SECONDS):
+            self.logger.warning(
+                "Gave up waiting %ss for the FAIRsharing harvester - this is "
+                "our own request queue, not a FAIRsharing rate limit",
+                LOCK_TIMEOUT_SECONDS,
+            )
+            raise RegistryUnavailableError(
+                'fairsharing',
+                f"another harvest held the FAIRsharing session for more than "
+                f"{LOCK_TIMEOUT_SECONDS}s",
+            )
+        try:
+            yield
+        finally:
+            self._lock.release()
 
     def _authenticate(self):
         """
         Authenticates with the FAIRsharing API using environment variables.
         """
-        username = os.environ.get('FAIRSHARING_USERNAME')
-        password = os.environ.get('FAIRSHARING_PASSWORD')
+        # Note: _serialized() can itself raise RegistryUnavailableError (a
+        # lock-acquire timeout) before the try/except below is even reached,
+        # which would break the "must not fail" promise on that except path.
+        # Unreachable today - __init__ takes a fresh lock, and the only other
+        # caller (_search_fairsharing()'s 401 retry) is already holding it,
+        # reentrant - but becomes reachable the day something calls
+        # _authenticate() directly from a second thread, e.g. a background
+        # token refresh.
+        with self._serialized():
+            username = os.environ.get('FAIRSHARING_USERNAME')
+            password = os.environ.get('FAIRSHARING_PASSWORD')
 
-        if not username or not password:
-            self.logger.warning("FAIRSHARING_USERNAME and/or FAIRSHARING_PASSWORD environment variables not set. Authentication will fail.")
-            return
+            if not username or not password:
+                self.logger.warning("FAIRSHARING_USERNAME and/or FAIRSHARING_PASSWORD environment variables not set. Authentication will fail.")
+                return
 
-        url = f"{self.api_url}/users/sign_in"
-        payload = {"user": {"login": username, "password": password}}
-        headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+            url = f"{self.api_url}/users/sign_in"
+            payload = {"user": {"login": username, "password": password}}
+            headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
 
-        try:
-            response = request_with_backoff(
-                self.session, 'POST', url, 'fairsharing',
-                headers=headers, data=json.dumps(payload), timeout=10,
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.jwt_token = data.get('jwt')
-            if self.jwt_token:
-                self.logger.info("Successfully authenticated with FAIRsharing.")
-        except RegistryUnavailableError as e:
-            # Deliberately not re-raised: the caller may be constructing one
-            # shared harvester for a whole batch, and that must not fail. An
-            # unset token degrades each repository individually instead.
-            self.logger.error("Could not sign in to FAIRsharing: %s", e)
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Failed to authenticate with FAIRsharing: {e}")
+            try:
+                response = request_with_backoff(
+                    self.session, 'POST', url, 'fairsharing',
+                    headers=headers, data=json.dumps(payload), timeout=10,
+                )
+                response.raise_for_status()
+                data = response.json()
+                self.jwt_token = data.get('jwt')
+                if self.jwt_token:
+                    self.logger.info("Successfully authenticated with FAIRsharing.")
+            except RegistryUnavailableError as e:
+                # Deliberately not re-raised: the caller may be constructing one
+                # shared harvester for a whole batch, and that must not fail. An
+                # unset token degrades each repository individually instead.
+                self.logger.error("Could not sign in to FAIRsharing: %s", e)
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Failed to authenticate with FAIRsharing: {e}")
 
     def harvest(self, catalog_url, repository_name=None):
         """
@@ -83,39 +149,40 @@ class FAIRsharingHarvester:
         have a URL (the connexion controller) may omit it, and the fallback then
         guesses from the hostname.
         """
-        if not self.jwt_token:
-            raise RegistryUnavailableError(
-                'fairsharing',
-                "not signed in - check the FAIRSHARING_USERNAME and "
-                "FAIRSHARING_PASSWORD environment variables",
-            )
+        with self._serialized():
+            if not self.jwt_token:
+                raise RegistryUnavailableError(
+                    'fairsharing',
+                    "not signed in - check the FAIRSHARING_USERNAME and "
+                    "FAIRSHARING_PASSWORD environment variables",
+                )
 
-        self.logger.info("Harvesting from FAIRsharing...")
-        hostname = urlparse(catalog_url).hostname
-        if not hostname:
-            return None
+            self.logger.info("Harvesting from FAIRsharing...")
+            hostname = urlparse(catalog_url).hostname
+            if not hostname:
+                return None
 
-        # Strategy 1: Search by hostname
-        self.logger.info(f"Strategy 1: Searching FAIRsharing by hostname: '{hostname}'")
-        metadata = self._search_fairsharing(hostname, hostname_filter=hostname)
-        if metadata:
-            self.logger.info(f"SUCCESS: Found FAIRsharing record via hostname search: {metadata.get('title')}")
-            return metadata
-
-        # Strategy 2: Search by repository name
-        search_name = repository_name or self._name_from_hostname(hostname)
-        if search_name:
-            self.logger.info(f"Strategy 2: Retrying FAIRsharing search with repository name: '{search_name}'")
-            metadata = self._search_fairsharing(search_name, hostname_filter=hostname)
+            # Strategy 1: Search by hostname
+            self.logger.info(f"Strategy 1: Searching FAIRsharing by hostname: '{hostname}'")
+            metadata = self._search_fairsharing(hostname, hostname_filter=hostname)
             if metadata:
-                self.logger.info(f"SUCCESS: Found FAIRsharing record via name search: {metadata.get('title')}")
+                self.logger.info(f"SUCCESS: Found FAIRsharing record via hostname search: {metadata.get('title')}")
                 return metadata
 
-        self.logger.info(
-            "FAIRsharing has no record matching '%s' (searched by hostname%s).",
-            hostname, " and name" if search_name else "",
-        )
-        return None
+            # Strategy 2: Search by repository name
+            search_name = repository_name or self._name_from_hostname(hostname)
+            if search_name:
+                self.logger.info(f"Strategy 2: Retrying FAIRsharing search with repository name: '{search_name}'")
+                metadata = self._search_fairsharing(search_name, hostname_filter=hostname)
+                if metadata:
+                    self.logger.info(f"SUCCESS: Found FAIRsharing record via name search: {metadata.get('title')}")
+                    return metadata
+
+            self.logger.info(
+                "FAIRsharing has no record matching '%s' (searched by hostname%s).",
+                hostname, " and name" if search_name else "",
+            )
+            return None
 
     def _name_from_hostname(self, hostname):
         """Guess a searchable repository name from a hostname, or None.
@@ -138,15 +205,16 @@ class FAIRsharingHarvester:
         """
         Harvests metadata directly from FAIRsharing using its DOI.
         """
-        if not self.jwt_token:
-            raise RegistryUnavailableError(
-                'fairsharing',
-                "not signed in - check the FAIRSHARING_USERNAME and "
-                "FAIRSHARING_PASSWORD environment variables",
-            )
+        with self._serialized():
+            if not self.jwt_token:
+                raise RegistryUnavailableError(
+                    'fairsharing',
+                    "not signed in - check the FAIRSHARING_USERNAME and "
+                    "FAIRSHARING_PASSWORD environment variables",
+                )
 
-        self.logger.info(f"-- Harvesting from FAIRsharing by ID: {fairsharing_id} --")
-        return self._search_fairsharing(fairsharing_id, expected_doi=fairsharing_id)
+            self.logger.info(f"-- Harvesting from FAIRsharing by ID: {fairsharing_id} --")
+            return self._search_fairsharing(fairsharing_id, expected_doi=fairsharing_id)
 
     def _normalize_hostname(self, hostname):
         """

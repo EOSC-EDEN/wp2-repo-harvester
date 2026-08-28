@@ -95,15 +95,41 @@ To confirm the rate limit throttles the harvest entry point and nothing else:
 
 Expect ten `200`s for the asset (prefix `location /`, no limit), and for `/` six `200`s then `503`s - the burst of 5 plus the one token 10r/m has issued by then. `503`s on the first line would mean the exact-match blocks are not matching and the prefix block picked up the limit instead. The limit is per client IP and refills on its own, so this costs a minute of throttling from whatever address you test from.
 
-## Turning FAIRsharing on later
+## Turning FAIRsharing on
 
-Only do once a response cache keyed on the repository URL is in place, because the 5-second pacing is per process and concurrent visitors would otherwise re-trigger the same lookups into a 429:
+The response cache this depended on is in place: registry lookups are cached
+per repository URL in-process, with one lookup shared between concurrent
+visitors, and one FAIRsharing sign-in per process rather than one per harvest.
+The pacing constant (`RegistryHTTP.REQUEST_DELAY_SECONDS['fairsharing']`) is
+now `7.5`, not `5.0`, and the mechanism changed with it: instead of sleeping
+before every request, a per-registry gate waits only until that many seconds
+have elapsed since the *previous response returned*. That makes the constant
+set the FAIRsharing request rate directly — a hard ceiling of `60 / 7.5` = 8
+requests/minute, never more — rather than adding a flat delay on top of
+whatever time had already passed, the way the old unconditional sleep did.
 
 1. put the credentials in `/etc/eden-harvester.env`;
 2. set `EDEN_ENABLED_REGISTRIES=re3data,fairsharing`;
 3. `systemctl restart eden-harvester`.
 
 No code change, no redeployment.
+
+To switch it back off, set `EDEN_ENABLED_REGISTRIES=re3data` and restart. The
+page then says FAIRsharing was not consulted because it is switched off in this
+deployment, which is a different thing from unavailable.
+
+Watch for rate limiting after any busy session:
+
+    journalctl -u eden-harvester --since today | grep -iE "429|rate.limit|could not be consulted"
+
+Two separate lines cover our own congestion rather than a FAIRsharing limit,
+and the grep above catches both: `_try_registry` logs `fairsharing could not
+be consulted: another harvest held the FAIRsharing session for more than
+60.0s` (from `RepositoryHarvester`), and a distinct WARNING logs `Gave up
+waiting <N>s for the FAIRsharing harvester - this is our own request queue,
+not a FAIRsharing rate limit` (from `FAIRsharingHarvester._serialized`).
+Either one turning up repeatedly is congestion here, not a FAIRsharing limit
+- the two are logged differently on purpose.
 
 ## Two things to be aware of:
 

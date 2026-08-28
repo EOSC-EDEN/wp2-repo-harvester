@@ -19,6 +19,10 @@ logging.basicConfig(
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
+from repo_harvester_server.helper.RegistryCache import (
+    CacheWaitTimeout,
+    RegistryResult,
+)
 from repo_harvester_server.helper.RegistryHTTP import RegistryUnavailableError
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
@@ -71,7 +75,7 @@ class RepositoryHarvester:
 
     def __init__(self, catalog_url, run_id=None, re3data_harvester=None,
                  fairsharing_harvester=None, repository_name=None, session=None,
-                 enabled_registries=None, persist=None):
+                 enabled_registries=None, persist=None, registry_cache=None):
         self.catalog_url = catalog_url
         # The repository's real name, when the caller knows it. A registry
         # search by name beats one by a name guessed from the hostname, which
@@ -84,6 +88,11 @@ class RepositoryHarvester:
         # sign-in covers every repository; a lone API request builds its own.
         self.re3data_harvester = re3data_harvester
         self.fairsharing_harvester = fairsharing_harvester
+        # Registry lookups may be shared across visitors on a public deployment
+        # so thirty people pasting one URL cost one lookup. Batch harvesting
+        # passes nothing: each repository appears once, so a cache there is
+        # dead weight that only grows.
+        self.registry_cache = registry_cache
         self.catalog_html = None
         self.metadata = []
         self.dcats = []
@@ -288,6 +297,32 @@ class RepositoryHarvester:
             self.degraded_sources.append(registry)
             return None
 
+    def _registry_cache_key(self):
+        """What makes two registry lookups the same lookup.
+
+        catalog_url is the post-redirect canonical URL by the time this runs,
+        so http://x.org and https://www.x.org collapse to one entry. The
+        enabled registries are in the key because an answer computed with
+        FAIRsharing switched off must not be served to a caller that has it on.
+
+        catalog_ids is included because it changes the query, not just the
+        cache key: _consult_registries asks re3data about
+        '|'.join(self.catalog_ids), and __init__ only appends response.url to
+        catalog_ids when a redirect actually happened. A visitor who pastes a
+        pre-redirect alias carries two aliases; one who pastes the canonical
+        URL directly carries one - different re3data queries that can
+        genuinely produce different answers, even though both visitors land
+        on the same catalog_url. Dropping catalog_ids from the key would let
+        whichever of those two arrives first cache its answer for the other,
+        silently, for up to COMPLETED_TTL_SECONDS.
+        """
+        return (
+            self.catalog_url,
+            self.repository_name or '',
+            frozenset(self.enabled_registries),
+            frozenset(self.catalog_ids),
+        )
+
     def harvest_registry_metadata(self):
         """
         Orchestrates harvesting from external registries with cross-referencing.
@@ -305,6 +340,49 @@ class RepositoryHarvester:
                 ', '.join(self.disabled_registries),
             )
 
+        if self.registry_cache is None:
+            result = self._consult_registries()
+        else:
+            try:
+                result = self.registry_cache.get_or_compute(
+                    self._registry_cache_key(), self._consult_registries
+                )
+            except CacheWaitTimeout as e:
+                # Deliberately not computing it ourselves: that duplicates the
+                # work the cache exists to prevent, and the extra time would
+                # run past the reverse proxy's read timeout. Report a degraded
+                # lookup and return a page. The caller that is still computing
+                # will fill the cache for the next visitor.
+                self.logger.warning(
+                    "Registry lookup for %s was already in progress and did not "
+                    "finish in time (%s); reporting it degraded. This is our own "
+                    "request queue, not a registry rate limit.",
+                    self.catalog_url, e,
+                )
+                result = RegistryResult(
+                    None, None,
+                    [n for n in self.REGISTRY_NAMES if n in self.enabled_registries],
+                )
+
+        # Extend rather than assign: degraded_sources is appended in exactly one
+        # place, _try_registry, so on a cache hit the list is empty and the two
+        # are equivalent - but assignment would discard anything recorded before
+        # this point, and the dedup keeps a leader's own appends from doubling
+        # up with the list it returns.
+        for registry in result.degraded:
+            if registry not in self.degraded_sources:
+                self.degraded_sources.append(registry)
+
+        self.merge_metadata(result.re3data, 're3data')
+        self.merge_metadata(result.fairsharing, 'fairsharing')
+
+        self.logger.info("--- Finished Registry Harvesting ---")
+
+    def _consult_registries(self):
+        """Actually ask the registries. The expensive part, and the cached one.
+
+        :rtype: RegistryResult
+        """
         re3data_harvester = None
         if 're3data' in self.enabled_registries:
             re3data_harvester = self.re3data_harvester or Re3DataHarvester()
@@ -361,11 +439,8 @@ class RepositoryHarvester:
                     fairsharing_meta.get('title')
                 )
 
-        # 4. Merge all collected metadata
-        self.merge_metadata(re3data_meta, 're3data')
-        self.merge_metadata(fairsharing_meta, 'fairsharing')
-
-        self.logger.info("--- Finished Registry Harvesting ---")
+        return RegistryResult(re3data_meta, fairsharing_meta,
+                              list(self.degraded_sources))
 
     def harmonize(self):
         h = RepositoryHarmonizer(self.catalog_url, run_id=self.run_id)

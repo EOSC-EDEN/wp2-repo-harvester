@@ -10,6 +10,7 @@ Two concerns live here:
     hammering an endpoint that has just told us to stop.
 """
 import logging
+import threading
 import time
 
 import requests
@@ -21,7 +22,8 @@ logging.basicConfig(
 
 logger = logging.getLogger('RegistryHTTP')
 
-# Proactive pacing before each registry request, in seconds, per registry.
+# Minimum interval between one registry response and the next request to that
+# registry, in seconds, per registry.
 #
 # Keyed by registry because the limits are not shared. FAIRsharing's limiter
 # behaves like a rolling one-minute budget of roughly a dozen requests, not a
@@ -30,16 +32,30 @@ logger = logging.getLogger('RegistryHTTP')
 # answered normally for about a minute, then tripped again, in eight bursts.
 # Reactive backoff cannot win against a window that long: 1+2+4 seconds of retrying
 # lands inside the same exhausted budget, which is why 21 of 28 rate-limited
-# repositories exhausted their retries and were reported degraded. Pacing at 5s
-# holds us near 12 requests/minute and took that run to zero degraded records.
+# repositories exhausted their retries and were reported degraded. A flat sleep
+# before every request took that run to zero degraded records - but under the
+# unconditional sleep it used, the batch's own per-repository work meant the rate
+# it actually achieved was nearer 8 requests/minute, not the ~12/minute the raw
+# interval implies.
+#
+# _RateGate (below) makes this constant a hard *ceiling* rather than a floor with
+# slack on top: it enforces 60 / REQUEST_DELAY_SECONDS requests per minute, never
+# more, because it only tops up whatever of the interval a batch's own work has
+# not already used instead of adding the full delay on top of it every time. 7.5s
+# is chosen to land on the ~8 requests/minute that was actually measured to work
+# on 2026-08-12, not the ~12/minute the plain interval math suggests - that gap
+# was margin the old mechanism gave away for free, which the gate no longer does.
+# Raising or lowering this value now moves the batch's FAIRsharing request rate
+# directly, in a way the old unconditional sleep never did this precisely:
+# re-measure against a real batch before retuning it.
 #
 # re3data is deliberately absent: it has never rate-limited us in any run. Pacing
 # it alongside FAIRsharing cost 13 minutes of a 33-minute batch for no benefit.
 #
-# The 5s is inferred from one run, not documented by FAIRsharing. Re-measure after
-# a batch and adjust.
+# The delay is inferred from one run, not documented by FAIRsharing. Re-measure
+# after a batch and adjust.
 REQUEST_DELAY_SECONDS = {
-    'fairsharing': 5.0,
+    'fairsharing': 7.5,
 }
 
 # Registries we have not measured are not paced: inventing a delay would slow
@@ -49,6 +65,94 @@ DEFAULT_REQUEST_DELAY_SECONDS = 0.0
 # Never honour a Retry-After longer than this: one registry's advice must not
 # stall a 100-repository batch.
 MAX_BACKOFF_SECONDS = 60
+
+
+def _monotonic():
+    """The gate's clock, behind one indirection.
+
+    Tests need to control it, and `RegistryHTTP.time` *is* the stdlib time
+    module - so patching `time.monotonic` through it would replace the clock
+    for threading, pytest and everything else running in the process. Patching
+    this name instead reaches only the gate.
+    """
+    return time.monotonic()
+
+
+class _RateGate:
+    """Enforces a floor of REQUEST_DELAY_SECONDS between one response from a
+    registry and the next request sent to it.
+
+    That floor is also a ceiling: it caps the registry at
+    60 / REQUEST_DELAY_SECONDS requests per minute, never more.
+    REQUEST_DELAY_SECONDS now sets the achieved request rate directly, rather
+    than only bounding it from below the way the old unconditional sleep did.
+
+    Measures from the previous *response*, not from the previous request, so
+    a request waits only for whatever of the interval is still unpaid instead
+    of re-adding the whole interval on top of time that already passed. The
+    two behave identically only when almost no time passes between one
+    response and the next request - a 429 retry (now that the backoff itself
+    re-stamps the gate below), or the pair of search strategies
+    FAIRsharingHarvester tries for one repository - because there is then
+    nothing to subtract. Everywhere else (ordinary work between repositories
+    in a batch, or a process that has been idle) the gate waits less than the
+    old flat sleep would have, down to nothing at all for a registry's very
+    first request - so throughput can rise toward the ceiling above, it just
+    can never cross it.
+
+    The lock is held across the whole request, including 429 backoff sleeps.
+    Releasing it earlier would let another thread fire while this one is
+    backing off - which is how four harvest slots turned into four times the
+    request budget this figure was calibrated for.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._last_completed = None
+
+    def acquire(self):
+        self._lock.acquire()
+
+    def release(self):
+        self._lock.release()
+
+    def _wait_turn(self, delay):
+        """Caller must hold self._lock (acquire()/release() above) -
+        _last_completed is not synchronised on its own."""
+        if self._last_completed is None:
+            return
+        remaining = delay - (_monotonic() - self._last_completed)
+        if remaining > 0:
+            time.sleep(remaining)
+
+    def _mark_done(self):
+        """Caller must hold self._lock (acquire()/release() above) -
+        _last_completed is not synchronised on its own."""
+        self._last_completed = _monotonic()
+
+
+_gates = {}
+_gates_lock = threading.Lock()
+
+
+def _gate_for(registry):
+    with _gates_lock:
+        gate = _gates.get(registry)
+        if gate is None:
+            gate = _RateGate()
+            _gates[registry] = gate
+        return gate
+
+
+def reset_pacing_state():
+    """Forget when each registry was last called.
+
+    For tests: the gate is process-global, so without this one test's timing
+    leaks into the next.
+    """
+    with _gates_lock:
+        _gates.clear()
+
 
 # How much of a 429 body to keep. Enough to tell Rack::Attack's "Retry later"
 # from an nginx error page, not enough to bury the log in HTML.
@@ -129,13 +233,33 @@ def request_with_backoff(session, method, url, registry, max_retries=3, **kwargs
     or the request never completes.
     """
     pacing = REQUEST_DELAY_SECONDS.get(registry, DEFAULT_REQUEST_DELAY_SECONDS)
+    if not pacing:
+        # An unpaced registry is not gated at all: serialising re3data behind a
+        # lock would cost latency to enforce a limit it has never imposed.
+        return _attempt_with_backoff(session, method, url, registry, max_retries,
+                                     None, pacing, **kwargs)
+    gate = _gate_for(registry)
+    gate.acquire()
+    try:
+        return _attempt_with_backoff(session, method, url, registry, max_retries,
+                                     gate, pacing, **kwargs)
+    finally:
+        gate.release()
+
+
+def _attempt_with_backoff(session, method, url, registry, max_retries, gate,
+                          pacing, **kwargs):
+    """The retry loop itself. Split out so the gate is held across all of it."""
     for attempt in range(max_retries + 1):
-        if pacing:
-            time.sleep(pacing)
+        if gate is not None:
+            gate._wait_turn(pacing)
         try:
             response = session.request(method, url, **kwargs)
         except requests.exceptions.RequestException as e:
             raise RegistryUnavailableError(registry, f"request failed: {e}")
+        finally:
+            if gate is not None:
+                gate._mark_done()
 
         if response.status_code != 429:
             return response
@@ -152,6 +276,14 @@ def request_with_backoff(session, method, url, registry, max_retries=3, **kwargs
             "%s of %s: %s", registry, wait, attempt + 1, max_retries, url,
         )
         time.sleep(wait)
+        if gate is not None:
+            # Re-stamp after the backoff, not just after the response above:
+            # otherwise the next _wait_turn() measures from *before* this sleep
+            # and treats the backoff as if it were pacing, collapsing every
+            # retry to a flat `pacing` gap instead of `wait + pacing` - the
+            # 429 backoff would count against the rate limiter's budget
+            # instead of adding to it.
+            gate._mark_done()
 
     # Carry the evidence into the exception too: by the time a degraded harvest
     # is reported, the log line above is thousands of repositories away.
