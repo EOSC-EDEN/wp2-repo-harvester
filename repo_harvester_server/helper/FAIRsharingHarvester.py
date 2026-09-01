@@ -24,8 +24,9 @@ logging.basicConfig(
 # this position too ('cds' is the Copernicus Data Store, 'radar' is Oxford
 # Brookes' repository), and suppressing those would lose records.
 GENERIC_HOST_LABELS = frozenset({
-    'www', 'www2', 'web', 'data', 'opendata', 'repository', 'repo', 'archive',
-    'catalog', 'catalogue', 'portal', 'api', 'site', 'library', 'db', 'dv',
+    'www', 'www2', 'web', 'data', 'database', 'opendata', 'repository', 'repo',
+    'archive', 'catalog', 'catalogue', 'portal', 'api', 'site', 'library',
+    'db', 'dv', 'eprints',
 })
 
 # How long a harvest waits for another harvest that is already talking to

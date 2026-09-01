@@ -92,6 +92,23 @@ class TestFallbackSearchTerm:
         harvester.harvest('https://localhost/')
         assert _queries_sent(harvester) == ['localhost']
 
+    def test_database_is_stepped_over(self):
+        """Observed on the live demo, 2026-09-01: database.inspee.gr sent
+        FAIRsharing the single word 'database' and timed out at 15s, twice.
+        The label set held 'data' and 'db' but not 'database'. Stepping over it
+        also yields the better term - 'inspee' is the repository's own name."""
+        harvester = _harvester()
+        harvester.harvest('https://database.inspee.gr/')
+        assert _queries_sent(harvester) == ['database.inspee.gr', 'inspee']
+
+    def test_a_repository_platform_name_is_stepped_over(self):
+        """EPrints is repository software, not a repository. Searching for it
+        matches every EPrints-based record and none survives the hostname
+        filter; 'uklo' is the institution, which is what we actually want."""
+        harvester = _harvester()
+        harvester.harvest('https://eprints.uklo.edu.mk/')
+        assert _queries_sent(harvester) == ['eprints.uklo.edu.mk', 'uklo']
+
 
 class TestRepositoryNameReachesTheRegistry:
     """The name is only useful if it survives the trip from the batch runner."""

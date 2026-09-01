@@ -22,7 +22,15 @@ set -eu
 # burst of 5 - see deploy/eden-harvester.nginx.conf), hence DELAY below. On the
 # VM itself you can skip both the rate limit and TLS:
 #
-#     BASE_URL=http://127.0.0.1:8080 DELAY=0 sh warm-cache.sh
+#     sudo BASE_URL=http://127.0.0.1:8080 DELAY=0 sh /opt/eden-harvester/warm-cache.sh
+#
+# The variables go AFTER sudo, not before it. sudo resets the environment by
+# default, so `BASE_URL=... sudo sh ...` silently drops them and you get the
+# defaults - a slow run through nginx - with nothing in the output to say so.
+#
+# sudo is needed only to read the file: the checkout belongs to the harvester
+# user. The script itself wants no privileges, so `sudo -u harvester sh ...`
+# works just as well and grants none.
 #
 # Either way it reaches the same process, so it warms the same cache the public
 # is served from.
