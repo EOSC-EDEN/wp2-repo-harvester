@@ -2,7 +2,7 @@ import json
 import re
 
 import requests
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 from lxml import etree
 import os
 import csv
@@ -49,20 +49,350 @@ class Re3DataHarvester:
             self.logger.warning(f"Warning: Service mapping file not found at {csv_path}")
         return mappings'''
 
-    def harvest(self, catalog_url):
-        """
-        Public method to harvest metadata for a given URL.
-        It searches by the domain and then verifies the results.
-        """
-        hostnames = []
+    def harvest(self, catalog_url, repository_name=None):
+        """Find the re3data record for one or more repository URLs."""
         self.logger.info("-- Harvesting from re3data by URL -- ")
-        catalog_url = catalog_url.split('|')
-        for url in catalog_url:
-            hostname = urlparse(url).hostname
-            if hostname:
-                hostnames.append(hostname)
-        catalog_query = '|'.join(hostnames)
-        return self._search_and_verify(catalog_query, 'hostname')
+        catalog_urls = [url.strip() for url in catalog_url.split('|') if url.strip()]
+        candidates = self._search_candidates_for_queries(catalog_urls)
+        records = self._fetch_candidate_records(candidates)
+        exact_matches = [
+            record for record in records
+            if any(
+                self._urls_match(record['url'], url)
+                for url in catalog_urls
+            )
+        ]
+        exact_match = self._best_named_match(
+            exact_matches, repository_name, catalog_urls
+        )
+        if exact_match:
+            return self._parse_record(exact_match['root'])
+
+        # A full URL search may miss other repositories on the same host.
+        # Search the hostname too before accepting a less exact match.
+        hostnames = list(dict.fromkeys(
+            hostname
+            for hostname in (urlparse(url).hostname for url in catalog_urls)
+            if hostname
+        ))
+        hostname_candidates = self._search_candidates_for_queries(hostnames)
+        known_ids = {candidate['id'] for candidate in candidates}
+        new_candidates = [
+            candidate for candidate in hostname_candidates
+            if candidate['id'] not in known_ids
+        ]
+        candidates.extend(new_candidates)
+        records.extend(self._fetch_candidate_records(new_candidates))
+        url_search_records = list(records)
+
+        exact_matches = [
+            record for record in records
+            if any(
+                self._urls_match(record['url'], url)
+                for url in catalog_urls
+            )
+        ]
+        exact_match = self._best_named_match(
+            exact_matches, repository_name, catalog_urls
+        )
+        if exact_match:
+            return self._parse_record(exact_match['root'])
+
+        related_records = []
+        best_related_records = []
+        if repository_name:
+            related_records = [
+                record for record in records
+                if self._url_score(catalog_urls, record['url']) > 0
+                and self._name_score(repository_name, record['name']) > 0
+            ]
+            related_match = self._best_named_match(
+                related_records, repository_name, catalog_urls
+            )
+            if related_match:
+                return self._parse_record(related_match['root'])
+
+            name_candidates = self._search_candidates_for_queries([repository_name])
+            known_ids = {candidate['id'] for candidate in candidates}
+            new_candidates = [
+                candidate for candidate in name_candidates
+                if candidate['id'] not in known_ids
+            ]
+            candidates.extend(new_candidates)
+            records.extend(self._fetch_candidate_records(new_candidates))
+            exact_matches = [
+                record for record in records
+                if any(
+                    self._urls_match(record['url'], url)
+                    for url in catalog_urls
+                )
+            ]
+            exact_match = self._best_named_match(
+                exact_matches, repository_name, catalog_urls
+            )
+            if exact_match:
+                return self._parse_record(exact_match['root'])
+
+            related_records = [
+                record for record in records
+                if self._url_score(catalog_urls, record['url']) > 0
+                and self._name_score(repository_name, record['name']) > 0
+            ]
+            related_match = self._best_named_match(
+                related_records, repository_name, catalog_urls, require_name=True
+            )
+            if related_match:
+                return self._parse_record(related_match['root'])
+            best_related_records = self._best_named_records(
+                related_records, repository_name, catalog_urls
+            )
+
+        strong_ambiguities = []
+        for matches in (exact_matches, best_related_records):
+            if len(matches) > 1:
+                strong_ambiguities.extend(matches)
+        if strong_ambiguities:
+            self._log_ambiguous_match(catalog_urls, strong_ambiguities)
+            return None
+
+        url_search_matches = [
+            record for record in url_search_records
+            if self._url_score(catalog_urls, record['url']) > 0
+        ]
+        all_url_matches = [
+            record for record in records
+            if self._url_score(catalog_urls, record['url']) > 0
+        ]
+        if len(url_search_matches) == 1 and len(all_url_matches) == 1:
+            return self._parse_record(url_search_matches[0]['root'])
+
+        best_name_records = self._best_named_records(
+            records, repository_name, catalog_urls
+        )
+        remaining_ambiguities = []
+        for matches in (all_url_matches, best_name_records):
+            if len(matches) > 1:
+                remaining_ambiguities.extend(matches)
+        if remaining_ambiguities:
+            self._log_ambiguous_match(catalog_urls, remaining_ambiguities)
+
+        self.logger.info("re3data has no matching entry for URLs: %s", catalog_urls)
+        return None
+
+    def _normalize_url(self, url):
+        """Prepare a URL for comparison without losing its path or parameters."""
+        parsed = urlparse(url.strip())
+        hostname = self._normalize_hostname(parsed.hostname)
+        try:
+            port = parsed.port
+        except ValueError:
+            self.logger.warning("Skipping URL with invalid port: %s", url)
+            return None
+        default_port = {'http': 80, 'https': 443}.get(parsed.scheme.casefold())
+        if port == default_port:
+            port = None
+        path = parsed.path or '/'
+        if path != '/':
+            path = path.rstrip('/')
+        query = tuple(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+        return hostname, port, path, query
+
+    def _urls_match(self, first_url, second_url):
+        """Check whether two URLs point to the same repository."""
+        first = self._normalize_url(first_url)
+        second = self._normalize_url(second_url)
+        return first is not None and second is not None and first == second
+
+    def _name_score(self, expected_name, candidate_name):
+        """Score how closely two repository names match.
+
+        3: The names are the same after lowercasing and removing punctuation.
+        2: After ignoring common words such as "data" and "repository", one
+           name has at least two words and all of them appear in the other.
+        1: A capitalized abbreviation of at least three characters from the
+           expected name appears as a word in the result name.
+        0: There is no reliable name match.
+
+        The name score is compared first. The URL score only breaks a tie
+        between records with the same name score.
+        """
+        if not expected_name or not candidate_name:
+            return 0
+
+        def normalize(value):
+            """Lowercase a name and keep only its words."""
+            return ' '.join(re.findall(r'[^\W_]+', value.casefold()))
+
+        expected = normalize(expected_name)
+        candidate = normalize(candidate_name)
+        if expected == candidate:
+            return 3
+
+        generic = {
+            'and', 'archive', 'archives', 'center', 'centre', 'data',
+            'database', 'for', 'institute', 'institution', 'of',
+            'repository', 'service', 'services', 'station', 'the',
+        }
+        expected_tokens = set(expected.split())
+        candidate_tokens = set(candidate.split())
+        expected_distinctive = expected_tokens - generic
+        candidate_distinctive = candidate_tokens - generic
+        if (
+            len(expected_distinctive) >= 2
+            and expected_distinctive <= candidate_tokens
+        ) or (
+            len(candidate_distinctive) >= 2
+            and candidate_distinctive <= expected_tokens
+        ):
+            return 2
+
+        expected_acronyms = {
+            token.casefold()
+            for token in re.findall(r'[A-Za-z0-9]+', expected_name)
+            if len(token) >= 3 and token.isupper()
+        }
+        if expected_acronyms & candidate_tokens:
+            return 1
+        return 0
+
+    def _url_score(self, catalog_urls, candidate_url):
+        """Score how closely a result URL matches the submitted URLs."""
+        candidate = self._normalize_url(candidate_url)
+        if candidate is None:
+            return 0
+        if any(self._urls_match(candidate_url, url) for url in catalog_urls):
+            return 3
+
+        candidate_hostname, candidate_port, candidate_path, _ = candidate
+        best_score = 0
+        for catalog_url in catalog_urls:
+            normalized_url = self._normalize_url(catalog_url)
+            if normalized_url is None:
+                continue
+            hostname, port, path, _ = normalized_url
+            if not self._hostnames_match(hostname or '', candidate_hostname):
+                continue
+            if port != candidate_port:
+                continue
+            best_score = max(best_score, 1)
+            if path != '/' and candidate_path != '/' and (
+                path == candidate_path
+                or path.startswith(candidate_path + '/')
+                or candidate_path.startswith(path + '/')
+            ):
+                best_score = 2
+        return best_score
+
+    def _best_named_match(
+        self, records, repository_name, catalog_urls, require_name=False
+    ):
+        """Return the best match, or None when there is no clear winner."""
+        if not records:
+            return None
+        if len(records) == 1 and not require_name:
+            return records[0]
+        best_records = self._best_named_records(
+            records, repository_name, catalog_urls
+        )
+        return best_records[0] if len(best_records) == 1 else None
+
+    def _best_named_records(self, records, repository_name, catalog_urls):
+        """Return the records with the best name and URL score."""
+        if not records or not repository_name:
+            return []
+
+        scored = [
+            (
+                self._name_score(repository_name, record['name']),
+                self._url_score(catalog_urls, record['url']),
+                record,
+            )
+            for record in records
+        ]
+        best_score = max(
+            (name_score, url_score)
+            for name_score, url_score, _ in scored
+        )
+        if best_score[0] == 0:
+            return []
+        return [
+            record for name_score, url_score, record in scored
+            if (name_score, url_score) == best_score
+        ]
+
+    def _search_candidates_for_queries(self, queries):
+        """Search re3data for each query and remove duplicate results."""
+        candidates = []
+        seen_ids = set()
+        for query in queries:
+            for candidate in self._search_candidates(query):
+                if candidate['id'] not in seen_ids:
+                    seen_ids.add(candidate['id'])
+                    candidates.append(candidate)
+        return candidates
+
+    def _search_candidates(self, query):
+        """Search re3data once and return each result's ID and name."""
+        search_url = f"{self.api_url}/repositories"
+        self.logger.info("Searching re3data for: %s", query)
+        resp = request_with_backoff(
+            self.session, 'GET', search_url, 're3data',
+            timeout=15, params={'query': query},
+        )
+        try:
+            resp.raise_for_status()
+            root = etree.fromstring(resp.content)
+        except (requests.exceptions.RequestException, etree.XMLSyntaxError) as e:
+            raise RegistryUnavailableError(
+                're3data', f"search response could not be read: {e}"
+            )
+
+        candidates = []
+        for repo_element in root.findall('.//repository'):
+            repo_id_elem = repo_element.find('id')
+            repo_name_elem = repo_element.find('name')
+            if repo_id_elem is None or not repo_id_elem.text:
+                self.logger.warning("Found a search result with no ID, skipping.")
+                continue
+            candidates.append({
+                'id': repo_id_elem.text,
+                'name': repo_name_elem.text if repo_name_elem is not None else None,
+            })
+        return candidates
+
+    def _fetch_candidate_records(self, candidates):
+        """Load full records that include a repository URL."""
+        records = []
+        for candidate in candidates:
+            repo_root = self._fetch_and_parse_record_xml(candidate['id'])
+            if repo_root is None:
+                continue
+            url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
+            if url_element is None or not url_element.text:
+                continue
+            records.append({
+                'id': candidate['id'],
+                'name': self._record_name(repo_root) or candidate['name'],
+                'url': url_element.text.strip(),
+                'root': repo_root,
+            })
+        return records
+
+    def _record_name(self, repo_root):
+        """Read the repository name from a full re3data record."""
+        name_element = repo_root.find('.//r3d:repositoryName', self.ns)
+        if name_element is not None and name_element.text:
+            return name_element.text.strip()
+        return None
+
+    def _log_ambiguous_match(self, catalog_urls, records):
+        """Log the IDs when more than one record could be correct."""
+        candidate_ids = list(dict.fromkeys(record['id'] for record in records))
+        self.logger.warning(
+            "More than one re3data record matches %s; record IDs: %s",
+            catalog_urls,
+            candidate_ids,
+        )
 
     def harvest_by_name(self, repo_name):
         """

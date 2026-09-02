@@ -210,7 +210,10 @@ class RepositoryHarvester:
 
         # 1. First pass on re3data
         re3_urls = '|'.join(self.catalog_ids) # in case more than one URL is know (e.g. via redirect)
-        re3data_meta = self._try_registry('re3data', re3data_harvester.harvest, re3_urls)
+        re3data_meta = self._try_registry(
+            're3data', re3data_harvester.harvest,
+            re3_urls, self.repository_name,
+        )
 
         # 2. Harvest FAIRsharing, using re3data's findings if available
         fairsharing_id = None
@@ -369,4 +372,3 @@ class RepositoryHarvester:
 
         self.logger.info("--- Finished Export ---")
         return final_records
-
