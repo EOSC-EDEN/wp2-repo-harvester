@@ -12,6 +12,9 @@ from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 def http_server():
     # Serve files from the "web" directory
     web_dir = os.path.join(os.path.dirname(__file__), "./web")
+    # The guard refuses non-public addresses; this fixture deliberately serves
+    # the page under test on localhost.
+    os.environ['EDEN_ALLOW_PRIVATE_TARGETS'] = '1'
     os.chdir(web_dir)
 
     PORT = 8000
@@ -26,6 +29,7 @@ def http_server():
 
     yield f"http://localhost:{PORT}"
 
+    os.environ.pop('EDEN_ALLOW_PRIVATE_TARGETS', None)
     server.shutdown()
     thread.join()
 

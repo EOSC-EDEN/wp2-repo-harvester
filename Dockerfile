@@ -16,8 +16,9 @@ FROM base AS deps
 RUN python -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+COPY repo_harvester_server ./repo_harvester_server
+RUN pip install --no-cache-dir .
 
 FROM base AS production
 
@@ -33,6 +34,6 @@ USER appuser
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/ui/')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')" || exit 1
 
-CMD ["python", "main.py"]
+CMD ["eden-harvester"]

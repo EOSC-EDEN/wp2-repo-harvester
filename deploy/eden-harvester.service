@@ -1,0 +1,41 @@
+[Unit]
+Description=EDEN Repository Harvester (public demo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=harvester
+Group=harvester
+WorkingDirectory=/opt/eden-harvester
+EnvironmentFile=/etc/eden-harvester.env
+ExecStart=/opt/eden-harvester/venv/bin/uvicorn repo_harvester_server.app:app --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+# AF_INET/AF_INET6 cover this process's own TCP connections, but glibc's
+# getaddrinfo opens an AF_NETLINK socket and nss-resolve talks to
+# systemd-resolved over AF_UNIX - both routine parts of the DNS resolution
+# this application does on every harvest. Excluding them risks turning a
+# resolver hiccup into "target does not resolve", which blames the target
+# instead of the sandbox. The security value of excluding AF_UNIX/AF_NETLINK
+# from a process that only ever makes outbound TCP connections is near zero,
+# so they stay allowed.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Cheap blast-radius bounds on a hostile response, not tuned/measured
+# figures: nothing at the application level caps a fetched response's size,
+# so a target that returns an unbounded or huge body could otherwise run the
+# process out of memory. TasksMax bounds runaway thread/process growth the
+# same way.
+MemoryMax=1G
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

@@ -13,7 +13,7 @@ cd wp2-repo-harvester
 
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install .
 ```
 
 ## Run the Server
@@ -22,13 +22,16 @@ pip install -r requirements.txt
 python main.py
 ```
 
-- API: http://localhost:8080
-- Swagger UI: http://localhost:8080/ui
+- HTML demo page: http://localhost:8080/
+- JSON API: http://localhost:8080/api/
+- Swagger UI: http://localhost:8080/api/ui/
 
 ## Harvest a Repository
 
+`GET /` (no query string) is the HTML form; `GET /?url=...` renders the same page with a report. For JSON, use the `/api` prefix instead:
+
 ```bash
-curl "http://localhost:8080/?url=https://pangaea.de"
+curl "http://localhost:8080/api/?url=https://pangaea.de"
 ```
 
 Returns JSON with repository metadata, publisher info, and discovered services.

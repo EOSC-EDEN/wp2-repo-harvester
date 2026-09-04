@@ -1,6 +1,12 @@
-import connexion
-from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
-from repo_harvester_server.models.repository_info import RepositoryInfo
+import logging
+
+from repo_harvester_server.demo.service import (
+    HarvesterBusyError,
+    run_interactive_harvest,
+)
+
+logger = logging.getLogger('GetRepoInfoController')
+
 
 def get_repo_info(url):  # noqa: E501
     """get_repo_info
@@ -12,50 +18,21 @@ def get_repo_info(url):  # noqa: E501
 
     :rtype: RepositoryInfo
     """
-    print(f"Received request to harvest: {url}")
-    
+    logger.info("Received request to harvest: %s", url)
+
     try:
-        # 1. Instantiate the harvester for the requested URL
-        harvester = RepositoryHarvester(url)
-
-        # 2. Run the harvest process - returns list of exported DCAT records
-        exported_records = harvester.harvest()
-
-        # 3. Collect all services from all exported records
-        #    Services are nested in foaf:primaryTopic.dcat:service
-        all_services = []
-        for record in exported_records:
-            if isinstance(record, dict):
-                # Check top-level
-                services = record.get("dcat:service", [])
-                if isinstance(services, list):
-                    all_services.extend(services)
-                elif services:
-                    all_services.append(services)
-
-                # Check nested in foaf:primaryTopic
-
-                primary_source = record.get("foaf:primaryTopic", {})
-                if isinstance(primary_source, dict):
-                    nested_services = primary_source.get("dcat:service", [])
-                    if isinstance(nested_services, list):
-                        all_services.extend(nested_services)
-                    elif nested_services:
-                        all_services.append(nested_services)
-
-        # 4. Construct the response object (matching swagger definition)
-        response = {
-            "repoURI": harvester.catalog_url,
-            "metadata": exported_records[0] if exported_records else {},
-            "services": all_services
-        }
-
-        return response
-
-    except Exception as e:
-        # Simple error handling
-        print(f"Error harvesting {url}: {e}")
+        report = run_interactive_harvest(url)
+        records = report['records']
         return {
-            "repoURI": url,
-            "error": str(e)
-        }, 500
+            "repoURI": report['canonical_url'],
+            "metadata": records[0] if records else {},
+            "services": report['services'],
+        }
+    except HarvesterBusyError as e:
+        # Recoverable and the caller's business: 503 invites a retry, 500 does not.
+        return {"repoURI": url, "error": str(e)}, 503
+    except Exception as e:
+        # Public endpoint: log the real exception server-side, but never hand
+        # the caller its text back - it can disclose internal paths or hosts.
+        logger.error("Error harvesting %s: %s", url, e, exc_info=True)
+        return {"repoURI": url, "error": "The harvest could not be completed."}, 500

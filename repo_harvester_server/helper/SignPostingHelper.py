@@ -2,9 +2,11 @@ import json
 import re
 from urllib.parse import urlparse, urljoin
 
-import requests
 from lxml import html
 import logging
+
+from repo_harvester_server.helper.HarvestSession import build_session
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -13,11 +15,15 @@ logging.basicConfig(
 class SignPostingHelper:
     logger = logging.getLogger('SignpostingHelper')
 
-    def __init__(self, url=None , html=None, headers=None):
+    def __init__(self, url=None , html=None, headers=None, session=None):
+        # Every fetch below - the page itself and the linkset URLs listed in its
+        # Link headers - goes through the guarded session, because those linkset
+        # URLs come from the page and are not ours to trust.
+        self.session = session or build_session()
         self.url = url
         if url:
             if html is None or headers is None:
-                response = requests.get(self.url)
+                response = self.session.get(self.url)
                 html = response.text
                 headers = response.headers
             self.html = html
@@ -37,7 +43,7 @@ class SignPostingHelper:
         links = []
         for linksetlink in linksets:
             if linksetlink.get('type') == 'application/linkset+json':
-                response = requests.get(linksetlink.get('link'))
+                response = self.session.get(linksetlink.get('link'))
                 link_dict = response.json()
                 if isinstance(link_dict.get('linkset'), list):
                     for linkset in link_dict.get('linkset'):
@@ -63,7 +69,7 @@ class SignPostingHelper:
                     print('Unexpected linkset type: ', type(link_dict.get('linkset')))
                 break
             elif linksetlink.get('type') == 'application/linkset':
-                response = requests.get(linksetlink.get('link'))
+                response = self.session.get(linksetlink.get('link'))
                 link_string = response.text
                 self.links.extend(self.parse_link_string(link_string))
             else:

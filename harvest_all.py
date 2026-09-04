@@ -20,6 +20,7 @@ from datetime import datetime
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from repo_harvester_server import config
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper, FusekiAuthError
@@ -141,6 +142,7 @@ def harvest_repository(url, name, run_id=None, re3data_harvester=None,
         re3data_harvester=re3data_harvester,
         fairsharing_harvester=fairsharing_harvester,
         repository_name=name,
+        persist=True,
     )
     exported_records = harvester.harvest()
 
@@ -198,6 +200,25 @@ def build_summary(total, results, start_time, duration):
         'success': results['success'],
         'failed': results['failed']
     }
+
+
+def report_registry_configuration():
+    """State which registries this run will consult.
+
+    EDEN_ENABLED_REGISTRIES controls this independently of any command-line
+    flag, so a registry it drops from a batch is easy to miss - the
+    credential check for that registry goes quiet along with it. Say the
+    choice plainly rather than leave it to be inferred from silence.
+    """
+    disabled = [
+        name for name in RepositoryHarvester.REGISTRY_NAMES
+        if name not in config.ENABLED_REGISTRIES
+    ]
+    if disabled:
+        print(f"\nNOTE: {', '.join(disabled)} disabled for this run by EDEN_ENABLED_REGISTRIES.")
+        print(f"Consulting: {', '.join(config.ENABLED_REGISTRIES)}.")
+    else:
+        print(f"\nConsulting all known registries this run: {', '.join(RepositoryHarvester.REGISTRY_NAMES)}.")
 
 
 def main():
@@ -272,6 +293,7 @@ def main():
             if repo['remarks']:
                 print(f"     Note: {repo['remarks']}")
         print(f"\nTotal: {len(repos)} repositories")
+        report_registry_configuration()
         sys.exit(0)
 
     # Create output directory
@@ -286,6 +308,11 @@ def main():
     run_id = ServiceInfoHelper.mint_run_id()
     log_path = start_run_log(output_dir, run_id)
     print(f"Logging this run to {log_path}")
+
+    # Say up front which registries this run will consult, beside the FUSEKI
+    # probe below - together they are the full "how is this run configured"
+    # picture for whoever is reading the console output.
+    report_registry_configuration()
 
     # Probe FUSEKI once before any harvesting: catches wrong credentials,
     # which an env-var presence check cannot. A failed probe does NOT stop

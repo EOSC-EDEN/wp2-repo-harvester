@@ -20,5 +20,16 @@ dependencies = [
     "jsonschema",
     "eden-service-validator @ git+https://github.com/EOSC-EDEN/wp2-service-validator.git@v0.1.0",
 ]
+
+[project.scripts]
+eden-harvester = "repo_harvester_server.app:main"
+
 [tool.setuptools.packages.find]
 include = ["repo_harvester_server*"]
+
+# None of these are Python modules, so setuptools ships none of them unless we
+# say so - and every one of them is opened at runtime. Omitting them produces a
+# package that imports cleanly and then fails on the first request.
+[tool.setuptools.package-data]
+"repo_harvester_server" = ["swagger/*.yaml", "data/*.json", "xslt/*.xslt", "*.csv"]
+"repo_harvester_server.demo" = ["templates/*.html", "static/*"]

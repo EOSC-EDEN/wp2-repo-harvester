@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+
+<form method="get" action="/">
+  <input type="url" name="url" placeholder="https://data.example.org/"
+         value="{{ submitted_url or '' }}" required
+         aria-label="Repository landing page URL">
+  <button type="submit">Harvest</button>
+</form>
+
+{% if message %}
+<p class="error">{{ message }}</p>
+{% endif %}
+
+{% block report %}
+{% if report %}
+  {% include "_report.html" %}
+{% endif %}
+{% endblock %}
+
+{% endblock %}

@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Packaging (pip install . builds these in place; deploy.sh runs that
+# on the VM on every deploy, so they must not accumulate there)
+build/
+*.egg-info/
+
 # Harvest folder
 output/
 
@@ -32,3 +37,9 @@ repo_harvester_server/helper/fairsharing_credentials.json
 # Apache Jena Fuseki (if accidentally downloaded here)
 apache-jena-fuseki-*/
 *.tar.gz
+
+# Operational runbooks: they describe our specific VM, not the software,
+# and this repository is public. Kept on disk, out of the repo.
+docs/deploy-eu-node.md
+docs/eosc-eu-node-service-runbook.md
+docs/eosc-eu-node-service-runbook.docx

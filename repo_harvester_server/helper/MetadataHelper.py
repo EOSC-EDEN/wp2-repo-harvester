@@ -16,13 +16,13 @@ from rdflib import RDF, DCAT, DC, DCTERMS, FOAF, SKOS, URIRef
 from lxml import html as lxml_html
 import os
 from repo_harvester_server.helper.GraphHelper import JSONGraph
+from repo_harvester_server.helper.HarvestSession import build_session
 from repo_harvester_server.helper.SignPostingHelper import SignPostingHelper
 from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, POLICY_INFO_QUERY, REPO_INFO_QUERY, DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 from jsonschema import validate
 import jmespath
-import requests
 
 # Define Namespaces
 VCARD = rdflib.Namespace("http://www.w3.org/2006/vcard/ns#")
@@ -40,18 +40,21 @@ logging.getLogger('rdflib.term').setLevel(logging.ERROR)
 
 class MetadataHelper:
     logger = logging.getLogger('MetadataHarvester')
-    def __init__(self, catalog_url=None, catalog_html=None, catalog_header=None):
+    def __init__(self, catalog_url=None, catalog_html=None, catalog_header=None, session=None):
         # Get the directory where the current script is located
         helper_dir = os.path.dirname(os.path.abspath(__file__))
         # Construct the absolute path to the xslt file
         #self.xslt_path = os.path.normpath(os.path.join(helper_dir, '..', 'xslt', 'rdf2json.xslt'))
+        self.session = session or build_session()
         self.service_info_helper = ServiceInfoHelper()
         self.catalog_url = catalog_url
         self.catalog_html = catalog_html
         if isinstance(self.catalog_html, str):
             self.catalog_html = self.catalog_html.encode("utf-8")
         self.catalog_header = catalog_header
-        self.signposting_helper = SignPostingHelper(self.catalog_url, self.catalog_html, self.catalog_header)
+        self.signposting_helper = SignPostingHelper(
+            self.catalog_url, self.catalog_html, self.catalog_header, session=self.session
+        )
 
     def _fuzzy_value(self, g, subject, property_names):
         """Robustly finds a value by matching property URI endings."""
@@ -346,8 +349,7 @@ class MetadataHelper:
         metadata = {}
         if 'http' in str(typed_link):
             try:
-                import requests
-                resp = requests.get(typed_link, timeout=10)
+                resp = self.session.get(typed_link, timeout=10)
                 if resp.status_code == 200:
                     try:
                         ljson_str = json.dumps(resp.json())
@@ -371,7 +373,7 @@ class MetadataHelper:
         sitemap_services = []
         if self.catalog_url:
             try:
-                r = requests.get(str(self.catalog_url).rstrip('/')+'/robots.txt')
+                r = self.session.get(str(self.catalog_url).rstrip('/')+'/robots.txt')
                 if r.status_code == 200:
                     m = re.search(r'^Sitemap:\s*(\S+)', r.text, re.MULTILINE)
                     if m:
