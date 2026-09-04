@@ -19,7 +19,7 @@ docker run -p 8080:8080 \
 
 ```bash
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install .
 python main.py
 ```
 
@@ -27,16 +27,18 @@ python main.py
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `FUSEKI_PATH` | Fuseki Graph Store endpoint | `http://localhost:3030/service_registry_store/data` |
+| `FUSEKI_PATH` | Fuseki Graph Store endpoint. Set to an empty value to disable persistence entirely | `http://localhost:3030/service_registry_store/data` |
 | `FUSEKI_USERNAME` | Fuseki basic auth username | — |
 | `FUSEKI_PASSWORD` | Fuseki basic auth password | — |
 | `FAIRSHARING_USERNAME` | FAIRsharing API username | — |
 | `FAIRSHARING_PASSWORD` | FAIRsharing API password | — |
+| `EDEN_ENABLED_REGISTRIES` | Comma-separated registries to consult (`re3data`, `fairsharing`) | `re3data,fairsharing` |
+| `EDEN_ALLOW_PRIVATE_TARGETS` | Disables the SSRF address check so private/internal targets can be harvested — **must remain unset on a public host**; it lets a submitted URL reach private/internal addresses | unset (checked) |
 
-Then visit http://localhost:8080/ui or:
+Then visit http://localhost:8080/ (the HTML demo page) or the Swagger UI at http://localhost:8080/api/ui/, or fetch JSON directly:
 
 ```bash
-curl "http://localhost:8080/?url=https://pangaea.de"
+curl "http://localhost:8080/api/?url=https://pangaea.de"
 ```
 
 ## Documentation

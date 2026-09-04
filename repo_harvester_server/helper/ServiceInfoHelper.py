@@ -12,7 +12,7 @@ except ImportError:  # pragma: no cover
     def _dist_version(_name):
         raise PackageNotFoundError
 
-from eden_validator import ServiceValidator  # Jens' service-validator package (pinned in requirements.txt)
+from eden_validator import ServiceValidator  # Jens' service-validator package (pinned in pyproject.toml)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,7 +61,7 @@ _RUN_ID_FORMAT = "%Y%m%dT%H%M%SZ"
 
 def _validator_agent():
     """The eden-service-validator as a prov:SoftwareAgent. The version is read from
-    the installed distribution so it tracks the pin in requirements.txt instead of
+    the installed distribution so it tracks the pin in pyproject.toml instead of
     drifting; in a source checkout without dist metadata the key is simply omitted."""
     agent = {
         "@id": VALIDATOR_AGENT_URI,

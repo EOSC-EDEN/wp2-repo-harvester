@@ -32,11 +32,10 @@ def _repo_harvester(**kwargs):
     __init__ deliberately catches only RequestException, and widening that
     catch to satisfy a test would swallow real programming errors.
     """
-    with mock.patch(
-        'repo_harvester_server.helper.RepositoryHarvester.requests.get',
-        side_effect=requests.exceptions.ConnectionError('no network in tests'),
-    ):
-        return RepositoryHarvester('https://example.org/', **kwargs)
+    session = mock.Mock()
+    session.get.side_effect = requests.exceptions.ConnectionError('no network in tests')
+    kwargs.setdefault('session', session)
+    return RepositoryHarvester('https://example.org/', **kwargs)
 
 
 class TestDegradedSources:
@@ -598,3 +597,155 @@ class TestRe3DataRecordFetchHonesty:
         assert result is not None
         assert result['title'] == 'Second'
         assert harvester.session.request.call_count == 3
+
+
+class TestRegistryMetadataSurvivesFailedPageFetch:
+    """Registry metadata must be exported even when the landing page is dead.
+
+    In the 2026-08-12 batch, ISSDA, Bgee and Rhea each had a verified re3data
+    record and a matched FAIRsharing record, yet exported nothing and reported
+    'Metadata: No, Services: 0'. Their landing page fetch had failed, and the
+    export path reached its DCAT mapper only through the MetadataHelper built
+    from that page. Registry metadata needs no landing page.
+    """
+
+    def test_registry_metadata_is_exported_when_page_fetch_failed(self, harvester_credentials):
+        harvester = _repo_harvester()
+        # The trigger: __init__'s fetch raised, so no page-derived helper exists.
+        assert harvester.metadata_helper is None
+
+        harvester.merge_metadata({'title': 'Irish Social Science Data Archive'}, 're3data')
+        harvester.merge_metadata({'title': 'Irish Social Science Data Archive'}, 'fairsharing')
+
+        records = harvester.export_and_save(save=False)
+
+        assert [r['@id'] for r in records] == [
+            'eden://harvester/re3data/https://example.org/',
+            'eden://harvester/fairsharing/https://example.org/',
+        ]
+
+    def test_exported_record_carries_the_registry_content(self, harvester_credentials):
+        harvester = _repo_harvester()
+        harvester.merge_metadata(
+            {'title': 'Bgee', 'description': 'Gene expression data'}, 're3data'
+        )
+
+        records = harvester.export_and_save(save=False)
+
+        assert len(records) == 1
+        topic = records[0]['foaf:primaryTopic']
+        assert topic['dct:title'] == 'Bgee'
+        assert topic['dct:description'] == 'Gene expression data'
+        # The catalog URL still identifies the repository, dead page or not.
+        assert topic['@id'] == 'https://example.org/'
+
+    def test_export_makes_no_http_request(self, harvester_credentials):
+        """Exporting must not touch the network.
+
+        The page-less MetadataHelper is built without a URL because
+        SignPostingHelper fetches any URL it is given, with no timeout. Passing
+        one made AgroPortal hang on a dead landing page and fail the whole
+        repository in the 2026-08-13 batch - a repository the export fix was
+        supposed to rescue, not break.
+        """
+        harvester = _repo_harvester()
+        harvester.merge_metadata({'title': 'AgroPortal'}, 'fairsharing')
+
+        with mock.patch(
+            'repo_harvester_server.helper.MetadataHelper.build_session'
+        ) as build:
+            records = harvester.export_and_save(save=False)
+
+        build.return_value.get.assert_not_called()
+        assert len(records) == 1
+
+    def test_successful_fetch_still_uses_the_page_derived_helper(self, harvester_credentials):
+        """The fallback must not displace the real helper when the page loaded."""
+        harvester = _repo_harvester()
+        harvester.metadata_helper = mock.Mock()
+        harvester.metadata_helper.export.return_value = {
+            'foaf:primaryTopic': {'dct:title': 'From the page helper'}
+        }
+        harvester.merge_metadata({'title': 'whatever'}, 're3data')
+
+        records = harvester.export_and_save(save=False)
+
+        harvester.metadata_helper.export.assert_called_once()
+        assert records[0]['foaf:primaryTopic']['dct:title'] == 'From the page helper'
+
+
+def _self_hosted_metadata_helper(links):
+    """A metadata_helper double whose only interesting behaviour is the
+    signposting links it reports; every extractor otherwise finds nothing.
+    """
+    helper = mock.Mock()
+    for attr in (
+        'get_embedded_jsonld_metadata', 'get_html_meta_tags_metadata',
+        'get_fairicat_metadata', 'get_feed_metadata',
+        'get_opensearch_metadata', 'get_sitemap_service_metadata',
+        'get_linked_jsonld_metadata',
+    ):
+        getattr(helper, attr).return_value = None
+    helper.signposting_helper.get_links.return_value = links
+    return helper
+
+
+class TestDescribedbyLinkCap:
+    """harvest_self_hosted_metadata follows every 'describedby' link a page
+    publishes, each fetch costing up to the guarded session's read timeout.
+    An uncapped page publishing hundreds of links to slow hosts would hold
+    one of the four harvest slots for a very long time; four such submissions
+    would wedge the service while /healthz still reports ok.
+    """
+
+    def test_link_following_is_capped(self, harvester_credentials):
+        from repo_harvester_server.helper.RepositoryHarvester import MAX_DESCRIBEDBY_LINKS
+
+        harvester = _repo_harvester()
+        harvester.catalog_html = '<html></html>'
+        links = [{'link': f'https://data.example.org/record/{i}'}
+                 for i in range(MAX_DESCRIBEDBY_LINKS + 5)]
+        harvester.metadata_helper = _self_hosted_metadata_helper(links)
+
+        harvester.harvest_self_hosted_metadata()
+
+        assert harvester.metadata_helper.get_linked_jsonld_metadata.call_count == \
+            MAX_DESCRIBEDBY_LINKS
+
+    def test_truncation_is_logged(self, harvester_credentials):
+        from repo_harvester_server.helper.RepositoryHarvester import MAX_DESCRIBEDBY_LINKS
+
+        harvester = _repo_harvester()
+        harvester.catalog_html = '<html></html>'
+        num_links = MAX_DESCRIBEDBY_LINKS + 5
+        links = [{'link': f'https://data.example.org/record/{i}'}
+                 for i in range(num_links)]
+        harvester.metadata_helper = _self_hosted_metadata_helper(links)
+
+        harvester.harvest_self_hosted_metadata()
+
+        # logger.info() is also called unconditionally before truncation is
+        # even known ("Trying to find metadata using signposting links"), so
+        # asserting the mock was merely called proves nothing about the cap.
+        # Pin the actual truncation message: it must name both the number of
+        # links the page published and the cap that was applied.
+        info_calls = harvester.metadata_helper.signposting_helper.logger.info.call_args_list
+        truncation_calls = [
+            c for c in info_calls
+            if c.args and 'describedby links' in str(c.args[0])
+            and num_links in c.args and MAX_DESCRIBEDBY_LINKS in c.args
+        ]
+        assert truncation_calls, (
+            f"expected an info() call reporting {num_links} links found and "
+            f"the {MAX_DESCRIBEDBY_LINKS}-link cap; got {info_calls!r}"
+        )
+
+    def test_a_page_within_the_cap_is_unaffected(self, harvester_credentials):
+        harvester = _repo_harvester()
+        harvester.catalog_html = '<html></html>'
+        links = [{'link': 'https://data.example.org/record/1'}]
+        harvester.metadata_helper = _self_hosted_metadata_helper(links)
+
+        harvester.harvest_self_hosted_metadata()
+
+        assert harvester.metadata_helper.get_linked_jsonld_metadata.call_count == 1
