@@ -2,10 +2,11 @@
 
 The steps are spelled out here rather than calling RepositoryHarvester.harvest()
 because persistence and harmonisation must follow configuration instead of
-being unconditional: the same code has to serve a stateless public demo (no
-FUSEKI_PATH, nothing written or harmonized) and a developer or batch machine
-with a triple store (FUSEKI_PATH set, behaving exactly like harvest() always
-did). config.PERSISTENCE_ENABLED is that switch.
+being unconditional: the same code has to serve a stateless public demo (an
+empty FUSEKI_PATH, nothing written or harmonized) and a developer or batch
+machine with a triple store (FUSEKI_PATH set or left unset, behaving exactly
+like harvest() always did). config.PERSISTENCE_ENABLED is that switch, and it
+is on unless FUSEKI_PATH is explicitly emptied.
 
 The response shape is unchanged for the JSON API either way: export_and_save
 appends to final_records before its `if save:` block and returns the same list

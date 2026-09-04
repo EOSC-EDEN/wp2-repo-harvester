@@ -27,7 +27,7 @@ python main.py
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `FUSEKI_PATH` | Fuseki Graph Store endpoint | `http://localhost:3030/service_registry_store/data` |
+| `FUSEKI_PATH` | Fuseki Graph Store endpoint. Set to an empty value to disable persistence entirely | `http://localhost:3030/service_registry_store/data` |
 | `FUSEKI_USERNAME` | Fuseki basic auth username | — |
 | `FUSEKI_PASSWORD` | Fuseki basic auth password | — |
 | `FAIRSHARING_USERNAME` | FAIRsharing API username | — |
