@@ -172,7 +172,7 @@ class TestSharedBetweenThreads:
         inside_lock = threading.Lock()
         searches = []
 
-        def slow_search(query, hostname_filter=None, expected_doi=None):
+        def slow_search(query, hostname_filter=None, expected_doi=None, **kwargs):
             with inside_lock:
                 inside.append(1)
                 concurrent.append(len(inside))
@@ -244,7 +244,7 @@ class TestSharedBetweenThreads:
         calls = []
 
         def search_that_reauthenticates(query, hostname_filter=None,
-                                        expected_doi=None):
+                                        expected_doi=None, **kwargs):
             harvester._authenticate()
             calls.append(query)
             return None
@@ -288,3 +288,146 @@ class TestSharedBetweenThreads:
         prober.join(2)
 
         assert acquired_elsewhere == [True], "lock was not released"
+
+
+def _record(record_id, name, homepage, status='ready'):
+    """One FAIRsharing search result, shaped like the API returns it."""
+    return {
+        'id': record_id,
+        'type': 'fairsharing_records',
+        'attributes': {
+            # record_type is required: the DCAT mapping joins it into a string
+            # and jmespath raises on a null there, which the harvester reports
+            # as an unparseable record.
+            'record_type': 'repository',
+            'metadata': {
+                'name': name,
+                'homepage': homepage,
+                'status': status,
+                'doi': f'10.25504/FAIRsharing.{record_id}',
+            },
+        },
+    }
+
+
+def _results(*records):
+    resp = mock.Mock()
+    resp.status_code = 200
+    resp.headers = {}
+    resp.text = ''
+    resp.json.return_value = {'data': list(records)}
+    resp.raise_for_status.return_value = None
+    return resp
+
+
+# Every one of these is homed on www.ebi.ac.uk. That is the whole problem: the
+# hostname cannot tell them apart, and BioSamples is listed first.
+EBI = (
+    _record('ewjdq6', 'BioSamples', 'https://www.ebi.ac.uk/biosamples/'),
+    _record('e1byny', 'PRIDE', 'https://www.ebi.ac.uk/pride/'),
+    _record('6k0kwd', 'ArrayExpress', 'https://www.ebi.ac.uk/arrayexpress/'),
+)
+
+
+class TestRecordChoiceOnASharedHostname:
+    """Which record is returned when several share the submitted hostname.
+
+    Reducing the submitted URL to its hostname made the harvester attach
+    BioSamples' metadata to https://www.ebi.ac.uk/ and PRIDE's to
+    https://www.ebi.ac.uk/biosamples/ - whichever record FAIRsharing listed
+    first won. The path is the only thing that separates them.
+    """
+
+    def test_the_matching_path_wins_over_the_first_listed_record(self):
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(*EBI)
+
+        result = harvester.harvest('https://www.ebi.ac.uk/pride/')
+
+        assert result['title'] == 'PRIDE'
+
+    def test_a_trailing_slash_does_not_prevent_the_match(self):
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(*EBI)
+
+        result = harvester.harvest('https://www.ebi.ac.uk/arrayexpress')
+
+        assert result['title'] == 'ArrayExpress'
+
+    def test_a_deeper_recorded_homepage_still_matches_the_landing_page(self):
+        """re3data and FAIRsharing often record a deeper page than we are given."""
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(
+            _record('ena', 'European Nucleotide Archive',
+                    'https://www.ebi.ac.uk/ena/browser/home'),
+            _record('e1byny', 'PRIDE', 'https://www.ebi.ac.uk/pride/'),
+        )
+
+        result = harvester.harvest('https://www.ebi.ac.uk/ena')
+
+        assert result['title'] == 'European Nucleotide Archive'
+
+    def test_no_answer_when_several_records_are_equally_close(self):
+        """A bare hostname cannot choose between three repositories on it."""
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(*EBI)
+
+        result = harvester.harvest('https://www.ebi.ac.uk/')
+
+        assert result is None
+
+    def test_the_ambiguous_candidates_are_logged(self, caplog):
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(*EBI)
+
+        with caplog.at_level('WARNING'):
+            harvester.harvest('https://www.ebi.ac.uk/')
+
+        message = ' '.join(r.getMessage() for r in caplog.records)
+        assert 'More than one FAIRsharing record' in message
+        for name in ('BioSamples', 'PRIDE', 'ArrayExpress'):
+            assert name in message
+
+    def test_a_single_record_on_the_host_still_matches(self):
+        """The common case must not become stricter."""
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(
+            _record('solo', 'PANGAEA', 'https://www.pangaea.de/'),
+        )
+
+        result = harvester.harvest('https://www.pangaea.de/about')
+
+        assert result['title'] == 'PANGAEA'
+
+    def test_a_deprecated_record_never_wins(self):
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(
+            _record('old', 'Retired Archive', 'https://www.ebi.ac.uk/pride/',
+                    status='deprecated'),
+            _record('e1byny', 'PRIDE', 'https://www.ebi.ac.uk/pride/'),
+        )
+
+        result = harvester.harvest('https://www.ebi.ac.uk/pride/')
+
+        assert result['title'] == 'PRIDE'
+
+    def test_one_ready_record_breaks_a_tie(self):
+        """Equally close, but only one is live - that is still an answer."""
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(
+            _record('draft', 'Draft Duplicate', 'https://www.ebi.ac.uk/pride/',
+                    status='in_progress'),
+            _record('e1byny', 'PRIDE', 'https://www.ebi.ac.uk/pride/'),
+        )
+
+        result = harvester.harvest('https://www.ebi.ac.uk/pride/')
+
+        assert result['title'] == 'PRIDE'
+
+    def test_an_unrelated_host_is_not_matched(self):
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(
+            _record('other', 'Somewhere Else', 'https://example.org/data/'),
+        )
+
+        assert harvester.harvest('https://www.ebi.ac.uk/pride/') is None

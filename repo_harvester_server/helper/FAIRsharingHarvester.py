@@ -6,6 +6,8 @@ from contextlib import contextmanager
 import jmespath
 import requests
 from urllib.parse import urlparse
+
+from repo_harvester_server.helper import UrlMatching
 import logging
 from repo_harvester_server.helper.JMESPATHQueries import FAIRSHARING_QUERY
 from repo_harvester_server.helper.RegistryHTTP import (
@@ -165,7 +167,9 @@ class FAIRsharingHarvester:
 
             # Strategy 1: Search by hostname
             self.logger.info(f"Strategy 1: Searching FAIRsharing by hostname: '{hostname}'")
-            metadata = self._search_fairsharing(hostname, hostname_filter=hostname)
+            metadata = self._search_fairsharing(
+                hostname, hostname_filter=hostname, catalog_url=catalog_url
+            )
             if metadata:
                 self.logger.info(f"SUCCESS: Found FAIRsharing record via hostname search: {metadata.get('title')}")
                 return metadata
@@ -174,7 +178,9 @@ class FAIRsharingHarvester:
             search_name = repository_name or self._name_from_hostname(hostname)
             if search_name:
                 self.logger.info(f"Strategy 2: Retrying FAIRsharing search with repository name: '{search_name}'")
-                metadata = self._search_fairsharing(search_name, hostname_filter=hostname)
+                metadata = self._search_fairsharing(
+                    search_name, hostname_filter=hostname, catalog_url=catalog_url
+                )
                 if metadata:
                     self.logger.info(f"SUCCESS: Found FAIRsharing record via name search: {metadata.get('title')}")
                     return metadata
@@ -218,52 +224,12 @@ class FAIRsharingHarvester:
             return self._search_fairsharing(fairsharing_id, expected_doi=fairsharing_id)
 
     def _normalize_hostname(self, hostname):
-        """
-        Normalize a hostname by converting to lowercase and removing 'www.' prefix.
-        """
-        if not hostname:
-            return None
-        hostname = hostname.lower()
-        if hostname.startswith('www.'):
-            hostname = hostname[4:]
-        return hostname
+        """Normalize a hostname: lowercase, and drop a leading 'www.'."""
+        return UrlMatching.normalize_hostname(hostname)
 
     def _hostnames_match(self, query_hostname, record_hostname):
-        """
-        Check if two hostnames match, accounting for subdomains.
-
-        Returns True if:
-        - They are equal (after normalizing)
-        - One is a direct subdomain of the other (depth difference of 1)
-
-        This is more conservative than root-domain matching, which incorrectly matched
-        any hosts under the same TLD (e.g., 'data.dans.knaw.nl' with 'other.knaw.nl').
-
-        The depth check prevents matching deep subdomains with root domains:
-        - 'about.coscine.de' (3 parts) matches 'coscine.de' (2 parts) - diff 1 ✓
-        - 'data.dans.knaw.nl' (4 parts) does NOT match 'knaw.nl' (2 parts) - diff 2 ✗
-        - 'data.dans.knaw.nl' (4 parts) matches 'dans.knaw.nl' (3 parts) - diff 1 ✓
-        """
-        h1 = self._normalize_hostname(query_hostname)
-        h2 = self._normalize_hostname(record_hostname)
-
-        if not h1 or not h2:
-            return False
-
-        if h1 == h2:
-            return True
-
-        # Check if one is a subdomain of the other with max depth difference of 1
-        # e.g., "about.coscine.de" should match "coscine.de"
-        h1_parts = h1.split('.')
-        h2_parts = h2.split('.')
-        depth_diff = abs(len(h1_parts) - len(h2_parts))
-
-        if depth_diff == 1:
-            if h1.endswith('.' + h2) or h2.endswith('.' + h1):
-                return True
-
-        return False
+        """Check if two hostnames match, accounting for subdomains."""
+        return UrlMatching.hostnames_match(query_hostname, record_hostname)
 
     def _post_search(self, query):
         """One search POST, with 429 backoff. Returns the response."""
@@ -279,7 +245,8 @@ class FAIRsharingHarvester:
             headers=auth_headers, data=json.dumps({"q": query}), timeout=15,
         )
 
-    def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None):
+    def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None,
+                            catalog_url=None):
         """
         Helper to search FAIRsharing API and fetch details for the first match.
         """
@@ -311,9 +278,12 @@ class FAIRsharingHarvester:
                 'fairsharing', f"search response could not be read: {e}"
             )
         self.logger.info(f"FAIRsharing API returned {len(results)} results.")
-        return self._parse_search_results(results, hostname_filter, expected_doi)
+        return self._parse_search_results(
+            results, hostname_filter, expected_doi, catalog_url
+        )
 
-    def _parse_search_results(self, results, hostname_filter=None, expected_doi=None):
+    def _parse_search_results(self, results, hostname_filter=None, expected_doi=None,
+                              catalog_url=None):
         """
         Parses the FAIRsharing JSON search results to find the best match.
         """
@@ -321,7 +291,7 @@ class FAIRsharingHarvester:
             return None
 
         matching_records = []
-        
+
         # If we have an expected DOI, filter strictly by that
         if expected_doi:
             self.logger.info(f"Filtering results for exact DOI match: {expected_doi}")
@@ -333,10 +303,7 @@ class FAIRsharingHarvester:
                     self.logger.info(f"Match found! Record DOI '{record_doi}' matches expected DOI.")
                     matching_records.append(record)
                     break  # Found exact match
-                else:
-                    # self.logger.debug(f"Skipping record with DOI '{record_doi}'")
-                    pass
-        
+
         # Otherwise, filter by hostname if provided
         elif hostname_filter:
             self.logger.info(f"Filtering results for hostname match: '{hostname_filter}'")
@@ -352,38 +319,21 @@ class FAIRsharingHarvester:
                 try:
                     record_hostname = urlparse(homepage).hostname
                     if record_hostname and self._hostnames_match(hostname_filter, record_hostname):
-                        self.logger.info(f"Match found! Record homepage '{homepage}' matches query hostname '{hostname_filter}'.")
                         matching_records.append(record)
                 except Exception:
                     continue
-        
+
         if not matching_records:
-            # If we were searching by ID and found nothing, return None
             if expected_doi:
                 self.logger.warning(f"No FAIRsharing record found matching DOI: {expected_doi}")
                 return None
-            
-            # If we were searching by hostname and found nothing
             if hostname_filter:
                 self.logger.info(f"No records matched the hostname filter: {hostname_filter}")
                 return None
-                
-            # Fallback (shouldn't be reached with current logic)
             return None
 
-        best_record = None
-        for record in matching_records:
-            if record.get('attributes', {}).get('metadata', {}).get('status') == 'ready':
-                best_record = record
-                break
-        if not best_record:
-            for record in matching_records:
-                if record.get('attributes', {}).get('metadata', {}).get('status') != 'deprecated':
-                    best_record = record
-                    break
-        
-        if not best_record:
-            self.logger.info("Matching records found, but none were active/ready.")
+        best_record = self._choose_record(matching_records, catalog_url)
+        if best_record is None:
             return None
 
         #metadata_nested = attributes.get('metadata', {})
@@ -407,3 +357,80 @@ class FAIRsharingHarvester:
         }'''
         
         return {k: v for k, v in metadata.items() if v}
+
+    def _choose_record(self, matching_records, catalog_url=None):
+        """Pick one record out of everything sharing the submitted hostname.
+
+        A hostname is not an identity: www.ebi.ac.uk carries BioSamples, PRIDE
+        and ArrayExpress, and taking whichever the API listed first is how the
+        wrong repository's metadata used to be attached. When the submitted URL
+        is known, the record whose homepage matches it most closely wins, and a
+        tie is reported as no answer rather than guessed.
+
+        Deprecated records never win. Among records that tie on URL closeness,
+        a 'ready' one is preferred - that much of the original ordering was a
+        real signal and is kept.
+        """
+        live = [
+            r for r in matching_records
+            if r.get('attributes', {}).get('metadata', {}).get('status') != 'deprecated'
+        ]
+        if not live:
+            self.logger.info("Matching records found, but none were active/ready.")
+            return None
+
+        if not catalog_url:
+            # No URL to compare against (a caller that only had a hostname):
+            # fall back to the original 'first ready, else first live' order.
+            return next(
+                (r for r in live
+                 if r.get('attributes', {}).get('metadata', {}).get('status') == 'ready'),
+                live[0],
+            )
+
+        def homepage_of(record):
+            return record.get('attributes', {}).get('metadata', {}).get('homepage')
+
+        winner, scored = UrlMatching.best_by_url(
+            live, [catalog_url], homepage_of, host_matcher=self._hostnames_match
+        )
+        if winner is not None:
+            self.logger.info(
+                "Match found! Record homepage '%s' is the closest match for '%s'.",
+                homepage_of(winner), catalog_url,
+            )
+            return winner
+
+        best = max((score for score, _ in scored), default=0)
+        tied = [r for score, r in scored if score == best]
+
+        if best == 0:
+            self.logger.info(
+                "No FAIRsharing record's homepage matches %s.", catalog_url
+            )
+            return None
+
+        # Several records are equally close. A 'ready' one among them is still
+        # a better answer than nothing; only a tie that survives that is
+        # genuinely undecidable.
+        ready = [
+            r for r in tied
+            if r.get('attributes', {}).get('metadata', {}).get('status') == 'ready'
+        ]
+        if len(ready) == 1:
+            self.logger.info(
+                "Match found! Record homepage '%s' is the only ready record "
+                "among %s equally close matches for '%s'.",
+                homepage_of(ready[0]), len(tied), catalog_url,
+            )
+            return ready[0]
+
+        names = [
+            r.get('attributes', {}).get('metadata', {}).get('name') or r.get('id')
+            for r in (ready or tied)
+        ]
+        self.logger.warning(
+            "More than one FAIRsharing record matches %s; candidates: %s",
+            catalog_url, names,
+        )
+        return None
