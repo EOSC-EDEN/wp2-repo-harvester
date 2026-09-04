@@ -450,16 +450,21 @@ def test_repository_harvester_passes_the_known_name_to_re3data(monkeypatch):
     fairsharing = mock.Mock()
     fairsharing.harvest.return_value = None
 
-    with mock.patch(
-        "repo_harvester_server.helper.RepositoryHarvester.requests.get",
-        side_effect=requests.exceptions.ConnectionError("offline test"),
-    ):
-        harvester = RepositoryHarvester(
-            "https://dans.knaw.nl/en/data-stations/life-sciences/",
-            re3data_harvester=re3data,
-            fairsharing_harvester=fairsharing,
-            repository_name="DANS - Life Sciences",
-        )
+    # The landing page must not be fetched: a redirect would append a second
+    # entry to catalog_ids and change what re3data is asked. Injecting a
+    # failing session is how the harvester takes an offline stand-in now -
+    # patching module-level requests.get no longer intercepts anything, since
+    # every outbound fetch goes through the guarded session.
+    session = mock.Mock()
+    session.get.side_effect = requests.exceptions.ConnectionError("offline test")
+
+    harvester = RepositoryHarvester(
+        "https://dans.knaw.nl/en/data-stations/life-sciences/",
+        re3data_harvester=re3data,
+        fairsharing_harvester=fairsharing,
+        repository_name="DANS - Life Sciences",
+        session=session,
+    )
 
     harvester.harvest_registry_metadata()
 
