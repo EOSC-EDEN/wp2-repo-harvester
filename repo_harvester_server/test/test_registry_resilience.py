@@ -352,11 +352,12 @@ class TestRe3DataHonesty:
         harvester.session.request.side_effect = [
             _xml_response(200, _SEARCH_XML),
             _xml_response(200, _EMPTY_XML),
+            _xml_response(200, _EMPTY_XML),
         ]
 
         harvester.harvest('https://data.example.org/')
 
-        assert harvester.session.request.call_count == 2
+        assert harvester.session.request.call_count == 3
 
 
 class TestHarvestAllDegradedReporting:
