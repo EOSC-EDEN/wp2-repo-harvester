@@ -431,3 +431,63 @@ class TestRecordChoiceOnASharedHostname:
         )
 
         assert harvester.harvest('https://www.ebi.ac.uk/pride/') is None
+
+
+class TestFullResultPage:
+    """The search must see every candidate before choosing between them.
+
+    FAIRsharing defaults to 25 results per page. 'www.ebi.ac.uk' has 99
+    records, so the harvester used to choose from the first quarter and could
+    never match the European Nucleotide Archive at all.
+    """
+
+    def test_a_full_page_is_requested(self):
+        harvester = _harvester()
+        harvester.harvest('https://www.pangaea.de/')
+
+        params = harvester.session.request.call_args_list[0].kwargs['params']
+        assert params['page[size]'] == fs_module.SEARCH_PAGE_SIZE
+        assert params['page[number]'] == 1
+
+    def test_more_pages_than_we_read_are_reported(self, caplog):
+        """A decision made on partial evidence must say so."""
+        harvester = _harvester()
+        resp = _results(_record('solo', 'PANGAEA', 'https://www.pangaea.de/'))
+        resp.json.return_value = {
+            'data': resp.json.return_value['data'],
+            'links': {'last': 'http://api.fairsharing.org/search/'
+                              'fairsharing_records/?page%5Bnumber%5D=3&page%5Bsize%5D=100'},
+        }
+        harvester.session.request.return_value = resp
+
+        with caplog.at_level('WARNING'):
+            harvester.harvest('https://www.pangaea.de/')
+
+        message = ' '.join(r.getMessage() for r in caplog.records)
+        assert 'pages of results' in message
+
+    def test_a_single_page_is_not_reported_as_truncated(self):
+        harvester = _harvester()
+        resp = _results(_record('solo', 'PANGAEA', 'https://www.pangaea.de/'))
+        resp.json.return_value = {
+            'data': resp.json.return_value['data'],
+            'links': {'last': 'http://api.fairsharing.org/search/'
+                              'fairsharing_records/?page%5Bnumber%5D=1&page%5Bsize%5D=100'},
+        }
+        harvester.session.request.return_value = resp
+
+        with mock.patch.object(harvester.logger, 'warning') as warn:
+            harvester.harvest('https://www.pangaea.de/')
+
+        assert not warn.called
+
+    def test_a_response_without_links_is_not_an_error(self):
+        """Older mocks and any response shape change must not break a harvest."""
+        harvester = _harvester()
+        harvester.session.request.return_value = _results(
+            _record('solo', 'PANGAEA', 'https://www.pangaea.de/'),
+        )
+
+        result = harvester.harvest('https://www.pangaea.de/')
+
+        assert result['title'] == 'PANGAEA'

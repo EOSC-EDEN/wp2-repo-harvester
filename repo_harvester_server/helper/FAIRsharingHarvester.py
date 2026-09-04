@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 import jmespath
 import requests
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 from repo_harvester_server.helper import UrlMatching
 import logging
@@ -52,6 +52,18 @@ GENERIC_HOST_LABELS = frozenset({
 # re-measure and adjust once a busy session gives us something to learn
 # from.
 LOCK_TIMEOUT_SECONDS = 60.0
+
+# FAIRsharing pages its search results and defaults to 25 per page, so the
+# harvester was choosing between the first 25 of what is often far more:
+# 'www.ebi.ac.uk' has 99 records, and the European Nucleotide Archive is not
+# in the first page - it could never be matched, whatever the matching rule.
+#
+# page[size] is honoured up to at least 250 (asking for 250 on that query
+# returns the same 99, so 99 is the total rather than a cap), which makes full
+# recall one request rather than four. 100 covers the worst hostname we know
+# of; when a query does exceed it, _search_fairsharing says so rather than
+# quietly deciding on a quarter of the evidence.
+SEARCH_PAGE_SIZE = 100
 
 
 class FAIRsharingHarvester:
@@ -243,6 +255,7 @@ class FAIRsharingHarvester:
         return request_with_backoff(
             self.session, 'POST', search_url, 'fairsharing',
             headers=auth_headers, data=json.dumps({"q": query}), timeout=15,
+            params={'page[number]': 1, 'page[size]': SEARCH_PAGE_SIZE},
         )
 
     def _search_fairsharing(self, query, hostname_filter=None, expected_doi=None,
@@ -272,15 +285,39 @@ class FAIRsharingHarvester:
 
         try:
             response.raise_for_status()
-            results = response.json().get('data', [])
+            body = response.json()
+            results = body.get('data', [])
         except requests.exceptions.RequestException as e:
             raise RegistryUnavailableError(
                 'fairsharing', f"search response could not be read: {e}"
             )
         self.logger.info(f"FAIRsharing API returned {len(results)} results.")
+        self._warn_if_truncated(body, query)
         return self._parse_search_results(
             results, hostname_filter, expected_doi, catalog_url
         )
+
+    def _warn_if_truncated(self, body, query):
+        """Say so when the answer is only the first page of the matches.
+
+        Choosing between candidates is only honest if we saw the candidates.
+        links.last names the final page, so a value above 1 means records
+        exist that this harvest never looked at - and 'no clear match' then
+        means something weaker than it appears.
+        """
+        last = (body.get('links') or {}).get('last')
+        if not last:
+            return
+        page = parse_qs(urlsplit(last).query).get('page[number]', [None])[0]
+        try:
+            pages = int(page)
+        except (TypeError, ValueError):
+            return
+        if pages > 1:
+            self.logger.warning(
+                "FAIRsharing has %s pages of results for '%s'; only the first "
+                "%s were considered.", pages, query, SEARCH_PAGE_SIZE,
+            )
 
     def _parse_search_results(self, results, hostname_filter=None, expected_doi=None,
                               catalog_url=None):
