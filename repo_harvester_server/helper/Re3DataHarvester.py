@@ -2,7 +2,9 @@ import json
 import re
 
 import requests
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import urlparse
+
+from repo_harvester_server.helper import UrlMatching
 from lxml import etree
 import os
 import csv
@@ -181,27 +183,11 @@ class Re3DataHarvester:
 
     def _normalize_url(self, url):
         """Prepare a URL for comparison without losing its path or parameters."""
-        parsed = urlparse(url.strip())
-        hostname = self._normalize_hostname(parsed.hostname)
-        try:
-            port = parsed.port
-        except ValueError:
-            self.logger.warning("Skipping URL with invalid port: %s", url)
-            return None
-        default_port = {'http': 80, 'https': 443}.get(parsed.scheme.casefold())
-        if port == default_port:
-            port = None
-        path = parsed.path or '/'
-        if path != '/':
-            path = path.rstrip('/')
-        query = tuple(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
-        return hostname, port, path, query
+        return UrlMatching.normalize_url(url)
 
     def _urls_match(self, first_url, second_url):
         """Check whether two URLs point to the same repository."""
-        first = self._normalize_url(first_url)
-        second = self._normalize_url(second_url)
-        return first is not None and second is not None and first == second
+        return UrlMatching.urls_match(first_url, second_url)
 
     def _name_score(self, expected_name, candidate_name):
         """Score how closely two repository names match.
@@ -257,31 +243,9 @@ class Re3DataHarvester:
 
     def _url_score(self, catalog_urls, candidate_url):
         """Score how closely a result URL matches the submitted URLs."""
-        candidate = self._normalize_url(candidate_url)
-        if candidate is None:
-            return 0
-        if any(self._urls_match(candidate_url, url) for url in catalog_urls):
-            return 3
-
-        candidate_hostname, candidate_port, candidate_path, _ = candidate
-        best_score = 0
-        for catalog_url in catalog_urls:
-            normalized_url = self._normalize_url(catalog_url)
-            if normalized_url is None:
-                continue
-            hostname, port, path, _ = normalized_url
-            if not self._hostnames_match(hostname or '', candidate_hostname):
-                continue
-            if port != candidate_port:
-                continue
-            best_score = max(best_score, 1)
-            if path != '/' and candidate_path != '/' and (
-                path == candidate_path
-                or path.startswith(candidate_path + '/')
-                or candidate_path.startswith(path + '/')
-            ):
-                best_score = 2
-        return best_score
+        return UrlMatching.url_score(
+            catalog_urls, candidate_url, host_matcher=self._hostnames_match
+        )
 
     def _best_named_match(
         self, records, repository_name, catalog_urls, require_name=False
@@ -402,53 +366,20 @@ class Re3DataHarvester:
         return self._search_and_verify(repo_name, 'name')
 
     def _normalize_hostname(self, hostname):
-        """
-        Normalize a hostname by converting to lowercase and removing 'www.' prefix.
-        """
-        if not hostname:
-            return None
-        hostname = hostname.lower()
-        if hostname.startswith('www.'):
-            hostname = hostname[4:]
-        return hostname
+        """Normalize a hostname: lowercase, and drop a leading 'www.'."""
+        return UrlMatching.normalize_hostname(hostname)
 
     def _hostnames_match(self, query_hostname, record_hostname):
+        """Check if two hostnames match, accounting for subdomains.
+
+        query_hostname may carry several alternatives joined by '|' (the form
+        _search_and_verify passes through from the caller's catalog_ids); any
+        one of them matching is a match.
         """
-        Check if two hostnames match, accounting for subdomains.
-
-        Returns True if:
-        - They are equal (after normalizing)
-        - One is a direct subdomain of the other (depth difference of 1)
-
-        This is more conservative than root-domain matching, which incorrectly matched
-        any hosts under the same TLD (e.g., 'data.dans.knaw.nl' with 'other.knaw.nl').
-
-        The depth check prevents matching deep subdomains with root domains:
-        - 'about.coscine.de' (3 parts) matches 'coscine.de' (2 parts) - diff 1 ✓
-        - 'data.dans.knaw.nl' (4 parts) does NOT match 'knaw.nl' (2 parts) - diff 2 ✗
-        - 'data.dans.knaw.nl' (4 parts) matches 'dans.knaw.nl' (3 parts) - diff 1 ✓
-        """
-        h2 = self._normalize_hostname(record_hostname)
-
-        all_hostnames = query_hostname.split('|') # can look like : domain.de|test.domain.de
-        for query_hostname in all_hostnames:
-            h1 = self._normalize_hostname(query_hostname)
-            if not h1 or not h2:
-                return False
-            if h1 == h2:
-                return True
-
-            # Check if one is a subdomain of the other with max depth difference of 1
-            # e.g., "about.coscine.de" should match "coscine.de"
-            h1_parts = h1.split('.')
-            h2_parts = h2.split('.')
-            depth_diff = abs(len(h1_parts) - len(h2_parts))
-
-            if depth_diff == 1:
-                if h1.endswith('.' + h2) or h2.endswith('.' + h1):
-                    return True
-
-        return False
+        return any(
+            UrlMatching.hostnames_match(alternative, record_hostname)
+            for alternative in str(query_hostname).split('|')
+        )
 
     def _search_and_verify(self, query, search_type):
         search_url = f"{self.api_url}/repositories?query={query}"
