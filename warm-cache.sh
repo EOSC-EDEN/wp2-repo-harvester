@@ -44,6 +44,10 @@ EPrints UKLO|https://eprints.uklo.edu.mk
 EnergoLocal|https://www.verdava.ro/
 POLAR MeteoData Distribution System|https://www.polarmeteoroloji.com/
 Portality|https://portality.tech/
+ESRF Data Portal|https://data.esrf.fr/
+The Human Organ Atlas|https://human-organ-atlas.esrf.fr/
+Paleontology database|https://paleo.esrf.fr/
+ESRF Cultural Heritage database|https://cultural-heritage.esrf.fr/tomo/
 LIST
 )
 
