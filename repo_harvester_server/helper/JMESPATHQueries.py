@@ -90,7 +90,7 @@ contact: ([contactPoint]||contactPoint[])[].{
     telephone: telephone||tel||hasTelephone.hasValue||hasTelephone||null, 
     url: url||hasURL.hasValue||hasUrl||null 
 } || null,
-subject: [subjects, keyword, theme][] || null,
+subject: [subjects, keyword, keywords, theme][] || null,
 license: license.url ||license."@id" || license.id || license.name || license || null 
 }
 '''

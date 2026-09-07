@@ -485,6 +485,8 @@ class MetadataHelper:
                 sg.parse(jstr,rootnodeID)
                 if sg.jsonld:
                     metadata = sg.query(REPO_INFO_QUERY)
+                    if metadata.get('subject'):
+                        metadata['subject'] = _flatten_subjects(metadata['subject'])
                     services = []
                     policies = []
                     for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
@@ -555,3 +557,21 @@ class MetadataHelper:
 
 def _has_colon(s):
     return ':' in s and not s.startswith(':')
+
+def _flatten_subjects(subjects):
+    """Reduce schema.org keywords to plain strings.
+
+    schema.org allows three shapes and pages use all of them: a list of strings,
+    one comma-separated string, and DefinedTerm objects for controlled
+    vocabularies. Without this the latter two reach dcat:keyword as a single
+    run-on keyword and as a dict whose unqualified '@type' FUSEKI would expand
+    against the base URI - the same problem _has_colon guards on the policy path.
+    Splitting on commas costs us the rare keyword that legitimately contains one.
+    """
+    flat = []
+    for subject in subjects:
+        if isinstance(subject, dict):
+            subject = subject.get('name') or subject.get('termCode')
+        if isinstance(subject, str):
+            flat.extend(part.strip() for part in subject.split(',') if part.strip())
+    return flat
