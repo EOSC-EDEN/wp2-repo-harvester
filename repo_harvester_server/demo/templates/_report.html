@@ -11,11 +11,48 @@
     'misconfigured': ('Not consulted (credentials not configured for this deployment)', 'status-misconfigured')
 } %}
 
+{# Takes groups, not a flat list: the landing-page table labels each group with
+   the check that found it, while a registry card passes one unlabelled group
+   because everything there came from that one registry. #}
+{% macro service_table(groups) %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Endpoint</th><th>Type</th><th>Conforms to</th></tr></thead>
+  {% for group in groups %}
+  <tbody{% if group.label %} class="grouped"{% endif %}>
+    {% if group.label %}
+    <tr class="group"><th colspan="3">{{ group.label }}</th></tr>
+    {% endif %}
+    {% for service in group.services %}
+    <tr>
+      <td><code>{{ service.get('dcat:endpointURL') or service.get('@id') or '—' }}</code></td>
+      <td>{{ service.get('dct:type') or service.get('dct:title') or '' }}</td>
+      <td><code>{{ service.get('dct:conformsTo') or '' }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  {% endfor %}
+</table>
+</div>
+{% endmacro %}
+
+{% macro looked_for_rows(rows) %}
+{% for row in rows %}
+  {% set label, css = self_hosted_status.get(row.status, (row.status, '')) %}
+  <tr>
+    <td>{{ row.label }}{% if row.note %}<span class="row-note">{{ row.note }}</span>{% endif %}</td>
+    <td class="{{ css }}">{{ label }}</td>
+  </tr>
+{% endfor %}
+{% endmacro %}
+
 {# The records belonging to the self-hosted section: whichever exported
    records carry the @id prefix of a source that appears in report.self_hosted.
    Built from report.self_hosted rather than a hardcoded extractor list, so a
-   new extractor lands here automatically. #}
-{% set self_hosted_sources = report.self_hosted | map(attribute='source') | list %}
+   new extractor lands here automatically. Sources are deduplicated because one
+   extractor can now contribute several rows - its own, plus a row per service
+   its record carried. #}
+{% set self_hosted_sources = report.self_hosted | map(attribute='source') | unique | list %}
 {% set self_hosted_records = [] %}
 {% for record in report.records %}
   {% for source in self_hosted_sources %}
@@ -24,6 +61,9 @@
     {% endif %}
   {% endfor %}
 {% endfor %}
+
+{% set metadata_rows = report.self_hosted | selectattr('kind', 'equalto', 'metadata') | list %}
+{% set service_rows = report.self_hosted | selectattr('kind', 'equalto', 'service') | list %}
 
 <h2>What your landing page exposes</h2>
 
@@ -46,20 +86,24 @@
     <div class="table-scroll">
     <table>
       <thead><tr><th>What was looked for</th><th>Result</th></tr></thead>
-      <tbody>
-      {% for row in report.self_hosted %}
-        {% set label, css = self_hosted_status.get(row.status, (row.status, '')) %}
-        <tr>
-          <td>{{ row.label }}</td>
-          <td class="{{ css }}">{{ label }}</td>
-        </tr>
-      {% endfor %}
+      {% if metadata_rows %}
+      <tbody class="grouped">
+        <tr class="group"><th colspan="2">Metadata</th></tr>
+        {{ looked_for_rows(metadata_rows) }}
       </tbody>
+      {% endif %}
+      {% if service_rows %}
+      <tbody class="grouped">
+        <tr class="group"><th colspan="2">Services</th></tr>
+        {{ looked_for_rows(service_rows) }}
+      </tbody>
+      {% endif %}
     </table>
     </div>
     <p class="note">
       &ldquo;Not found&rdquo; means the check ran and your page did not expose it. &ldquo;Not checked&rdquo; means the harvest
-      stopped before reaching that check.
+      stopped before reaching that check. Services a registry knows about but your page does not
+      publish are listed with that registry further down, not here.
     </p>
   </div>
   <div>
@@ -73,30 +117,17 @@
 </div>
 {% endif %}
 
-<h2>Services discovered</h2>
+<h2>Services found on your landing page</h2>
 
-{% if report.services %}
+{% if report.page_services %}
 <div class="split">
   <div>
-    <div class="table-scroll">
-    <table>
-      <thead><tr><th>Endpoint</th><th>Type</th><th>Conforms to</th></tr></thead>
-      <tbody>
-      {% for service in report.services %}
-        <tr>
-          <td><code>{{ service.get('dcat:endpointURL') or service.get('@id') or '—' }}</code></td>
-          <td>{{ service.get('dct:type') or service.get('dct:title') or '' }}</td>
-          <td><code>{{ service.get('dct:conformsTo') or '' }}</code></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    </div>
+    {{ service_table(report.page_service_groups) }}
   </div>
   <div>
     <details open>
       <summary>Raw services (JSON)</summary>
-      <pre>{{ report.services | tojson(indent=2) }}</pre>
+      <pre>{{ report.page_services | tojson(indent=2) }}</pre>
     </details>
   </div>
 </div>
@@ -131,6 +162,12 @@
   </tbody>
 </table>
 </div>
+{% if registry.services %}
+<h3>Services declared in this record</h3>
+{{ service_table([{'services': registry.services}]) }}
+<p class="note">{{ registry.display_name }} knows about these endpoints. Whether your landing page
+also points to them is a separate question &mdash; the table at the top answers that one.</p>
+{% endif %}
 <p class="note">Source: {{ registry.label }}. Shown separately &mdash; nothing on this
 page merges sources. This table is a subset of the full record below.</p>
 <details>

@@ -173,26 +173,41 @@ class HarvesterBusyError(Exception):
     """Every harvest slot is in use. Recoverable: the caller should retry."""
 
 
+RECORD_ID_PREFIX = 'eden://harvester/'
+
+
+def _record_source(record):
+    """The extractor an exported record came from, read off its @id."""
+    record_id = str(record.get('@id', ''))
+    if not record_id.startswith(RECORD_ID_PREFIX):
+        return None
+    return record_id[len(RECORD_ID_PREFIX):].split('/', 1)[0]
+
+
 def collect_services(records):
-    """Every service named in a list of exported DCAT records.
+    """Every service named in a list of exported DCAT records, paired with the
+    source whose record carried it.
 
     Services sit either at the top level or nested under foaf:primaryTopic, and
-    either as a list or as a single object.
+    either as a list or as a single object. The source matters because a
+    registry record carries services of its own - re3data turns every <r3d:api>
+    into one - and those are the registry's claim about the repository, not
+    something the landing page exposed.
     """
     services = []
     for record in records:
         if not isinstance(record, dict):
             continue
+        source = _record_source(record)
         containers = [record]
         primary_topic = record.get('foaf:primaryTopic')
         if isinstance(primary_topic, dict):
             containers.append(primary_topic)
         for container in containers:
             found = container.get('dcat:service', [])
-            if isinstance(found, list):
-                services.extend(found)
-            elif found:
-                services.append(found)
+            if not isinstance(found, list):
+                found = [found] if found else []
+            services.extend((source, service) for service in found)
     return services
 
 
@@ -208,11 +223,87 @@ def _self_hosted_rows(harvester, found_sources):
             status = 'missing'
         else:
             status = 'not_checked'
-        rows.append({'source': source, 'label': label, 'status': status})
+        rows.append({
+            'source': source,
+            'label': label,
+            'status': status,
+            'kind': 'service' if source in harvester.SERVICE_EXTRACTORS else 'metadata',
+        })
     return rows
 
 
-def _registry_rows(harvester, found_sources, records):
+def _service_label(service):
+    """How to name a service in the overview: its type, else its title, else where it points."""
+    for key in ('dct:type', 'dct:title', 'dcat:endpointURL', '@id'):
+        value = service.get(key)
+        if value:
+            return str(value)
+    return 'Service'
+
+
+def _found_service_rows(harvester, page_services):
+    """Rows naming the services that no extractor row already accounts for.
+
+    The four service-discovery checks each have a row of their own, so a service
+    they found is already represented. A service that arrived inside a metadata
+    record - a dcat:service block in the page's own JSON-LD, say - is not, and
+    used to appear in the detail table with nothing above it saying where it
+    came from. That mismatch is what this exists to close.
+    """
+    rows = []
+    for source, service in page_services:
+        if source in harvester.SERVICE_EXTRACTORS or not isinstance(service, dict):
+            continue
+        origin = harvester.extractors.get(source)
+        rows.append({
+            'source': source,
+            'label': _service_label(service),
+            'note': f'via {origin}' if origin else None,
+            'status': 'found',
+            'kind': 'service',
+        })
+    return rows
+
+
+def _note_findings_are_listed_below(rows, page_service_groups):
+    """Point a bare "Found" at the endpoints it stands for.
+
+    "FAIRiCAT / Linkset / API Catalog Discovery: Found" reads as the whole
+    answer, when what it means is that a catalog was found and the dozen
+    endpoints inside it are in the services table further down. Driven off the
+    groups actually built rather than a check name, so it says this only where
+    there is something below to look at.
+    """
+    sources_with_services = {group['source'] for group in page_service_groups}
+    for row in rows:
+        if (row['kind'] == 'service' and not row.get('note')
+                and row['source'] in sources_with_services):
+            row['note'] = 'details listed below'
+
+
+def _page_service_groups(harvester, page_services):
+    """Page services grouped by the check that found them, first-seen order.
+
+    A repository that publishes a linkset can put a dozen endpoints in this
+    table under two check rows, and a flat list leaves no way to tell which
+    check produced which. Grouping also makes the repeats honest rather than
+    noise: the same sitemap turning up in the linkset and again in sitemap
+    discovery is two findings, not one duplicated row.
+    """
+    groups = {}
+    for source, service in page_services:
+        group = groups.get(source)
+        if group is None:
+            group = groups[source] = {
+                'source': source,
+                'label': harvester.extractors.get(source) or source or 'Source not recorded',
+                'services': [],
+            }
+        group['services'].append(service)
+    return list(groups.values())
+
+
+def _registry_rows(harvester, found_sources, records, services):
     """One row per registry, keeping 'switched off' distinct from 'unreachable'."""
     display_names = getattr(harvester, 'REGISTRY_DISPLAY_NAMES', {})
     rows = []
@@ -239,6 +330,7 @@ def _registry_rows(harvester, found_sources, records):
             'label': harvester.extractors.get(name, name),
             'status': status,
             'record': record,
+            'services': [s for source, s in services if source == name],
         })
     return rows
 
@@ -248,13 +340,28 @@ def build_report(harvester, submitted_url, records):
     found_sources = {
         m.get('source') for m in harvester.metadata if m.get('metadata')
     }
+    services = collect_services(records)
+    page_services = [
+        (source, service) for source, service in services
+        if source not in harvester.REGISTRY_NAMES
+    ]
+    self_hosted = _self_hosted_rows(harvester, found_sources)
+    self_hosted.extend(_found_service_rows(harvester, page_services))
+    page_service_groups = _page_service_groups(harvester, page_services)
+    _note_findings_are_listed_below(self_hosted, page_service_groups)
     return {
         'submitted_url': submitted_url,
         'canonical_url': harvester.catalog_url,
         'page_fetched': harvester.metadata_helper is not None,
-        'self_hosted': _self_hosted_rows(harvester, found_sources),
-        'registries': _registry_rows(harvester, found_sources, records),
-        'services': collect_services(records),
+        'self_hosted': self_hosted,
+        'registries': _registry_rows(harvester, found_sources, records, services),
+        # What the landing page itself exposes, which is what the page reports
+        # on; 'services' stays every service from every source, because that is
+        # the JSON API's response shape. The flat list backs the raw-JSON block
+        # and the "did we find anything at all" check, the groups back the table.
+        'page_services': [service for _, service in page_services],
+        'page_service_groups': page_service_groups,
+        'services': [service for _, service in services],
         'records': records,
     }
 

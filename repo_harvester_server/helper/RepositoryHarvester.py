@@ -57,6 +57,13 @@ class RepositoryHarvester:
     # from what it tried and failed to reach.
     REGISTRY_NAMES = ('re3data', 'fairsharing')
 
+    # Which self-hosted extractors look for services rather than descriptive
+    # metadata. The demo page groups its report by this; the split is not
+    # derivable from the names (open_search has no suffix, sitemap_service is
+    # singular), so it is stated once here beside the other extractor facts.
+    SERVICE_EXTRACTORS = ('fairicat_services', 'feed_services',
+                          'sitemap_service', 'open_search')
+
     # How each registry writes its own name, for display. Kept beside
     # REGISTRY_NAMES so there is one place that knows about registries.
     REGISTRY_DISPLAY_NAMES = {
