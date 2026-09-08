@@ -9,7 +9,6 @@ the mount point.
 import os
 
 import connexion
-from connexion.options import SwaggerUIOptions
 
 from repo_harvester_server.demo.views import demo_blueprint
 
@@ -27,7 +26,7 @@ def create_app():
         base_path=API_BASE_PATH,
         arguments={'title': 'RepoInfoHarvester'},
         pythonic_params=True,
-        swagger_ui_options=SwaggerUIOptions(swagger_ui_path='/ui'),
+        options={'swagger_url': '/ui'},
     )
     app.app.register_blueprint(demo_blueprint)
     return app
