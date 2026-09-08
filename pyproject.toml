@@ -9,7 +9,7 @@ description = "Eden Repository Harvester"
 requires-python = ">=3.9"
 
 dependencies = [
-    "connexion[uvicorn,flask,swagger-ui]",
+    "connexion[uvicorn,flask,swagger-ui]>=3.1,<4",
     "rdflib==7.5.0",
     "lxml==6.0.2",
     "requests>=2.30.0",
