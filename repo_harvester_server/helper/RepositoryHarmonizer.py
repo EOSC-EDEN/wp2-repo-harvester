@@ -118,7 +118,7 @@ class RepositoryHarmonizer:
         policy_info = []
 
         for k, v in combined.items():
-            sources = [f'eden://harvester/{s.get('source')}/{self.repouri}' for s in v if s.get('source')]
+            sources = [f'eden://harvester/{s.get("source")}/{self.repouri}' for s in v if s.get('source')]
             catalog_info['hadPrimarySource'].extend(sources)
             if k in basic_props:
                 catalog_info[k], source = self.get_best_records(v)

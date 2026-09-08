@@ -36,12 +36,48 @@
 </div>
 {% endmacro %}
 
-{% macro looked_for_rows(rows) %}
+{% macro check_help(row, label, css, groups) %}
+{% set endpoints = [] %}
+{% for group in groups if group.source == row.source %}
+  {% for found in group.services %}
+    {% set _ = endpoints.append(found.get('dcat:endpointURL') or found.get('@id')) %}
+  {% endfor %}
+{% endfor %}
+<button type="button" class="help-open" data-help="help-{{ row.source }}"
+        title="What is this?" aria-label="What is this?">?</button>
+<dialog id="help-{{ row.source }}" class="help-dialog">
+  <div class="help-scroll">
+  <h3>{{ row.label }}</h3>
+  <p class="help-label">Relevance</p>
+  {% for quote in row.help.quotes %}
+  <blockquote>
+    <p>{{ quote.text }}</p>
+    <cite><a href="{{ quote.url }}" target="_blank" rel="noopener noreferrer">{{ quote.source }}</a></cite>
+  </blockquote>
+  {% endfor %}
+  <p class="help-checked">This check looks for: {{ row.help.checked }}</p>
+  {% for example in row.help.examples %}
+  {% if example.caption %}<p class="help-caption">{{ example.caption }}</p>{% endif %}
+  <pre><code>{{ example.code }}</code></pre>
+  {% endfor %}
+  <p class="help-result {{ css }}">{{ label }}{% if row.status == 'found' %} on this page{% endif %}</p>
+  {% if endpoints %}
+  <ul class="help-found">
+    {% for endpoint in endpoints %}<li><code>{{ endpoint }}</code></li>{% endfor %}
+  </ul>
+  {% endif %}
+  <form method="dialog"><button type="submit">Close</button></form>
+  </div>
+</dialog>
+{% endmacro %}
+
+{% macro looked_for_rows(rows, groups) %}
 {% for row in rows %}
   {% set label, css = self_hosted_status.get(row.status, (row.status, '')) %}
   <tr>
     <td>{{ row.label }}{% if row.note %}<span class="row-note">{{ row.note }}</span>{% endif %}</td>
     <td class="{{ css }}">{{ label }}</td>
+    <td class="help-cell">{% if row.help %}{{ check_help(row, label, css, groups) }}{% endif %}</td>
   </tr>
 {% endfor %}
 {% endmacro %}
@@ -85,17 +121,17 @@
   <div>
     <div class="table-scroll">
     <table>
-      <thead><tr><th>What was looked for</th><th>Result</th></tr></thead>
+      <thead><tr><th>What was looked for</th><th>Result</th><th></th></tr></thead>
       {% if metadata_rows %}
       <tbody class="grouped">
-        <tr class="group"><th colspan="2">Metadata</th></tr>
-        {{ looked_for_rows(metadata_rows) }}
+        <tr class="group"><th colspan="3">Metadata</th></tr>
+        {{ looked_for_rows(metadata_rows, report.page_service_groups) }}
       </tbody>
       {% endif %}
       {% if service_rows %}
       <tbody class="grouped">
-        <tr class="group"><th colspan="2">Services</th></tr>
-        {{ looked_for_rows(service_rows) }}
+        <tr class="group"><th colspan="3">Services</th></tr>
+        {{ looked_for_rows(service_rows, report.page_service_groups) }}
       </tbody>
       {% endif %}
     </table>
