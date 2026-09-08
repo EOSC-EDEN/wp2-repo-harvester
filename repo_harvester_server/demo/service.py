@@ -254,14 +254,31 @@ def _found_service_rows(harvester, page_services):
     for source, service in page_services:
         if source in harvester.SERVICE_EXTRACTORS or not isinstance(service, dict):
             continue
+        origin = harvester.extractors.get(source)
         rows.append({
             'source': source,
             'label': _service_label(service),
-            'origin': harvester.extractors.get(source),
+            'note': f'via {origin}' if origin else None,
             'status': 'found',
             'kind': 'service',
         })
     return rows
+
+
+def _note_findings_are_listed_below(rows, page_service_groups):
+    """Point a bare "Found" at the endpoints it stands for.
+
+    "FAIRiCAT / Linkset / API Catalog Discovery: Found" reads as the whole
+    answer, when what it means is that a catalog was found and the dozen
+    endpoints inside it are in the services table further down. Driven off the
+    groups actually built rather than a check name, so it says this only where
+    there is something below to look at.
+    """
+    sources_with_services = {group['source'] for group in page_service_groups}
+    for row in rows:
+        if (row['kind'] == 'service' and not row.get('note')
+                and row['source'] in sources_with_services):
+            row['note'] = 'details listed below'
 
 
 def _page_service_groups(harvester, page_services):
@@ -330,6 +347,8 @@ def build_report(harvester, submitted_url, records):
     ]
     self_hosted = _self_hosted_rows(harvester, found_sources)
     self_hosted.extend(_found_service_rows(harvester, page_services))
+    page_service_groups = _page_service_groups(harvester, page_services)
+    _note_findings_are_listed_below(self_hosted, page_service_groups)
     return {
         'submitted_url': submitted_url,
         'canonical_url': harvester.catalog_url,
@@ -341,7 +360,7 @@ def build_report(harvester, submitted_url, records):
         # the JSON API's response shape. The flat list backs the raw-JSON block
         # and the "did we find anything at all" check, the groups back the table.
         'page_services': [service for _, service in page_services],
-        'page_service_groups': _page_service_groups(harvester, page_services),
+        'page_service_groups': page_service_groups,
         'services': [service for _, service in services],
         'records': records,
     }

@@ -53,7 +53,9 @@
   tbody:first-of-type tr.group th { padding-top: .4rem; }
   /* Members sit under their group header rather than beside it. */
   tbody.grouped td:first-child { padding-left: 1.5rem; }
-  .origin { display: block; color: var(--muted); font-size: .85em; }
+  /* Second line under a row's label: where a service came from, or that a
+     check's "Found" stands for endpoints listed further down. */
+  .row-note { display: block; color: var(--muted); font-size: .85em; }
   h3 { font-size: 1rem; margin: 1.25rem 0 .4rem; }
   .status-found { color: var(--ok); font-weight: 600; }
   .status-missing { color: var(--gap); font-weight: 600; }

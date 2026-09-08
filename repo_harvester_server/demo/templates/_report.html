@@ -40,7 +40,7 @@
 {% for row in rows %}
   {% set label, css = self_hosted_status.get(row.status, (row.status, '')) %}
   <tr>
-    <td>{{ row.label }}{% if row.origin %}<span class="origin">via {{ row.origin }}</span>{% endif %}</td>
+    <td>{{ row.label }}{% if row.note %}<span class="row-note">{{ row.note }}</span>{% endif %}</td>
     <td class="{{ css }}">{{ label }}</td>
   </tr>
 {% endfor %}
