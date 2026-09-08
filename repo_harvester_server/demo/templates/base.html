@@ -38,6 +38,13 @@
            vertical-align: top; }
   th { font-weight: 600; color: var(--muted); font-size: .85rem;
        text-transform: uppercase; letter-spacing: .03em; }
+  /* Group headers inside the overview table: metadata and services are two
+     kinds of answer, and a visitor scanning for "does my page publish an API"
+     should not have to read every row to find where one list ends. */
+  tr.group th { padding-top: 1.1rem; border-bottom-color: var(--ink); }
+  tbody:first-of-type tr.group th { padding-top: .4rem; }
+  .origin { display: block; color: var(--muted); font-size: .85em; }
+  h3 { font-size: 1rem; margin: 1.25rem 0 .4rem; }
   .status-found { color: var(--ok); font-weight: 600; }
   .status-missing { color: var(--gap); font-weight: 600; }
   .status-not_checked, .status-disabled, .status-no_record, .status-misconfigured { color: var(--off); }
