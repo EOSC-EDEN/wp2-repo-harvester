@@ -264,6 +264,28 @@ def _found_service_rows(harvester, page_services):
     return rows
 
 
+def _page_service_groups(harvester, page_services):
+    """Page services grouped by the check that found them, first-seen order.
+
+    A repository that publishes a linkset can put a dozen endpoints in this
+    table under two check rows, and a flat list leaves no way to tell which
+    check produced which. Grouping also makes the repeats honest rather than
+    noise: the same sitemap turning up in the linkset and again in sitemap
+    discovery is two findings, not one duplicated row.
+    """
+    groups = {}
+    for source, service in page_services:
+        group = groups.get(source)
+        if group is None:
+            group = groups[source] = {
+                'source': source,
+                'label': harvester.extractors.get(source) or source or 'Source not recorded',
+                'services': [],
+            }
+        group['services'].append(service)
+    return list(groups.values())
+
+
 def _registry_rows(harvester, found_sources, records, services):
     """One row per registry, keeping 'switched off' distinct from 'unreachable'."""
     display_names = getattr(harvester, 'REGISTRY_DISPLAY_NAMES', {})
@@ -316,8 +338,10 @@ def build_report(harvester, submitted_url, records):
         'registries': _registry_rows(harvester, found_sources, records, services),
         # What the landing page itself exposes, which is what the page reports
         # on; 'services' stays every service from every source, because that is
-        # the JSON API's response shape.
+        # the JSON API's response shape. The flat list backs the raw-JSON block
+        # and the "did we find anything at all" check, the groups back the table.
         'page_services': [service for _, service in page_services],
+        'page_service_groups': _page_service_groups(harvester, page_services),
         'services': [service for _, service in services],
         'records': records,
     }

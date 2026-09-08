@@ -11,19 +11,27 @@
     'misconfigured': ('Not consulted (credentials not configured for this deployment)', 'status-misconfigured')
 } %}
 
-{% macro service_table(services) %}
+{# Takes groups, not a flat list: the landing-page table labels each group with
+   the check that found it, while a registry card passes one unlabelled group
+   because everything there came from that one registry. #}
+{% macro service_table(groups) %}
 <div class="table-scroll">
 <table>
   <thead><tr><th>Endpoint</th><th>Type</th><th>Conforms to</th></tr></thead>
-  <tbody>
-  {% for service in services %}
+  {% for group in groups %}
+  <tbody{% if group.label %} class="grouped"{% endif %}>
+    {% if group.label %}
+    <tr class="group"><th colspan="3">{{ group.label }}</th></tr>
+    {% endif %}
+    {% for service in group.services %}
     <tr>
       <td><code>{{ service.get('dcat:endpointURL') or service.get('@id') or '—' }}</code></td>
       <td>{{ service.get('dct:type') or service.get('dct:title') or '' }}</td>
       <td><code>{{ service.get('dct:conformsTo') or '' }}</code></td>
     </tr>
-  {% endfor %}
+    {% endfor %}
   </tbody>
+  {% endfor %}
 </table>
 </div>
 {% endmacro %}
@@ -79,13 +87,13 @@
     <table>
       <thead><tr><th>What was looked for</th><th>Result</th></tr></thead>
       {% if metadata_rows %}
-      <tbody>
+      <tbody class="grouped">
         <tr class="group"><th colspan="2">Metadata</th></tr>
         {{ looked_for_rows(metadata_rows) }}
       </tbody>
       {% endif %}
       {% if service_rows %}
-      <tbody>
+      <tbody class="grouped">
         <tr class="group"><th colspan="2">Services</th></tr>
         {{ looked_for_rows(service_rows) }}
       </tbody>
@@ -114,7 +122,7 @@
 {% if report.page_services %}
 <div class="split">
   <div>
-    {{ service_table(report.page_services) }}
+    {{ service_table(report.page_service_groups) }}
   </div>
   <div>
     <details open>
@@ -156,7 +164,7 @@
 </div>
 {% if registry.services %}
 <h3>Services declared in this record</h3>
-{{ service_table(registry.services) }}
+{{ service_table([{'services': registry.services}]) }}
 <p class="note">{{ registry.display_name }} knows about these endpoints. Whether your landing page
 also points to them is a separate question &mdash; the table at the top answers that one.</p>
 {% endif %}
