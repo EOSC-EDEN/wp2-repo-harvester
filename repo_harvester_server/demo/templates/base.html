@@ -56,6 +56,31 @@
   /* Second line under a row's label: where a service came from, or that a
      check's "Found" stands for endpoints listed further down. */
   .row-note { display: block; color: var(--muted); font-size: .85em; }
+  .help-cell { width: 1px; }
+  .help-open { display: inline-block; width: 1.3rem; height: 1.3rem; padding: 0;
+       border: 1px solid var(--line); border-radius: 50%; background: none;
+       color: var(--muted); font-size: .8rem; line-height: 1.2rem; }
+  .help-open:hover { color: var(--ink); border-color: var(--muted); }
+  .help-open.active { color: var(--ink); border: 1px solid var(--ink); }
+  .help-dialog { position: fixed; margin: 0; overflow: visible;
+       border: 1px solid var(--ink); border-radius: 6px; padding: 0;
+       background: #fff; color: var(--ink); font-size: .95rem; }
+  .help-scroll { max-height: 80vh; overflow-y: auto; padding: 1.25rem; }
+  .help-dialog::after { content: ''; position: absolute; top: var(--line-y);
+       left: -24px; width: 24px; border-top: 1px solid var(--ink); }
+  .help-dialog.to-left::after { left: 100%; }
+  body:has(.help-dialog[open]) { overflow: hidden; }
+  .help-dialog h3 { margin: 0 0 .75rem; font-size: 1.05rem; }
+  .help-dialog blockquote { margin: .5rem 0; padding-left: .8rem;
+       border-left: 2px solid var(--line); }
+  .help-dialog cite { display: block; font-style: normal; color: var(--muted);
+       font-size: .85em; }
+  .help-dialog form { margin: 1rem 0 0; }
+  .help-label { font-weight: 600; margin-bottom: .2rem; }
+  .help-result { font-weight: 600; margin: 1rem 0 0; }
+  .help-found { margin: .25rem 0 0; padding-left: 1.2rem; }
+  .help-checked { color: var(--muted); }
+  .help-caption { color: var(--muted); font-size: .85em; margin-bottom: 0; }
   h3 { font-size: 1rem; margin: 1.25rem 0 .4rem; }
   .status-found { color: var(--ok); font-weight: 600; }
   .status-missing { color: var(--gap); font-weight: 600; }
@@ -127,6 +152,35 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+<script>
+document.addEventListener('click', function (event) {
+  var opener = event.target.closest('[data-help]');
+  if (!opener) return;
+  var dialog = document.getElementById(opener.dataset.help);
+  if (dialog.open) { dialog.close(); return; }
+  document.querySelectorAll('.help-dialog[open]').forEach(function (open) {
+    open.close();
+  });
+  var a = opener.getBoundingClientRect();
+  var gap = 24, pad = 8;
+  var room = { right: window.innerWidth - a.right - gap - pad, left: a.left - gap - pad };
+  var toLeft = room.right < 320 && room.left > room.right;
+  var width = Math.min(672, Math.max(280, toLeft ? room.left : room.right));
+  dialog.style.width = width + 'px';
+  dialog.show();
+  opener.classList.add('active');
+  dialog.addEventListener('close', function () {
+    opener.classList.remove('active');
+  }, { once: true });
+  var height = dialog.getBoundingClientRect().height;
+  var top = Math.max(pad, Math.min(a.top + a.height / 2 - height / 2,
+                                   window.innerHeight - height - pad));
+  dialog.classList.toggle('to-left', toLeft);
+  dialog.style.left = (toLeft ? a.left - gap - width : a.right + gap) + 'px';
+  dialog.style.top = top + 'px';
+  dialog.style.setProperty('--line-y', (a.top + a.height / 2 - top) + 'px');
+});
+</script>
 <footer>
   <p>EOSC EDEN WP2 &middot; <a href="/api/ui/">JSON API</a></p>
 </footer>

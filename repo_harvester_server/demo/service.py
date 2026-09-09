@@ -17,6 +17,7 @@ import logging
 import threading
 
 from repo_harvester_server import config
+from repo_harvester_server.demo.check_help import help_for
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
 from repo_harvester_server.helper.RegistryCache import RegistryCache
 from repo_harvester_server.helper.RegistryHTTP import RegistryUnavailableError
@@ -228,6 +229,7 @@ def _self_hosted_rows(harvester, found_sources):
             'label': label,
             'status': status,
             'kind': 'service' if source in harvester.SERVICE_EXTRACTORS else 'metadata',
+            'help': help_for(source),
         })
     return rows
 
