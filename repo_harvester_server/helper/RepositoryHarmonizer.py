@@ -1,7 +1,9 @@
+import csv
 import json
 import logging
 import os
 from collections import Counter
+from functools import lru_cache
 
 import jmespath
 import requests
@@ -20,6 +22,34 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
+
+# Maintained by fidelis_scrape/fidelis_scraper.py, not on the repo (should it be?)
+MEMBERS_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'SG4 FIDELIS repos.csv')
+
+
+def _norm_url(url):
+    return url.strip().rstrip('/').lower()
+
+
+@lru_cache(maxsize=1)
+def fidelis_member_urls():
+    """URL_to_harvest of every CSV row flagged as a FIDELIS member.
+
+    Looked up here rather than passed in by harvest_all, because a single-repo
+    API harvest rewrites the harmonized graph too and has no CSV row to pass.
+    Read once per process: a running server needs a restart to see CSV edits.
+    A member harvested from any URL other than its URL_to_harvest is not recognised.
+    """
+    try:
+        with open(MEMBERS_CSV, encoding='utf-8-sig', newline='') as f:
+            return frozenset(
+                _norm_url(row['URL_to_harvest']) for row in csv.DictReader(f)
+                if row.get('FIDELIS member') == 'True' and row.get('URL_to_harvest')
+            )
+    except OSError as e:
+        logging.getLogger('RepositoryHarmonizer').warning(
+            'FIDELIS membership unknown, %s not readable: %s', MEMBERS_CSV, e)
+        return frozenset()
 
 
 class RepositoryHarmonizer:
@@ -142,6 +172,7 @@ class RepositoryHarmonizer:
         # Titles + DQV validation as a separate stage, keeping live endpoint
         # checks out of the merge logic above (still one write per harvest run).
         self.enrich_services_with_validation(catalog_info)
+        catalog_info["fidelis_member"] = _norm_url(self.repouri) in fidelis_member_urls()
 
         merged_catalog_dcat = self.clean_none(jmespath.search(DCAT_EXPORT_QUERY, catalog_info))
 

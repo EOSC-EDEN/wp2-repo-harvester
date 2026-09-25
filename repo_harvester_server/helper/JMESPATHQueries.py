@@ -35,6 +35,7 @@ DCAT_EXPORT_QUERY = '''
   "@id": id,
   "@type": ['dcat:Catalog', 'foaf:Project'],
   "dct:type": resource_type || null,
+  "dct:isPartOf": fidelis_member && {"@id": 'https://eden-fidelis.eu/network-member'} || null,
   "dct:title": title,
   "dct:identifier": identifier,
   "dct:publisher": ([publisher] || publisher[])[].{
