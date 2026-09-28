@@ -67,7 +67,7 @@ python harvest_all.py --filter dans --limit 3
 | File                                                 | Purpose                      |
 | ---------------------------------------------------- | ---------------------------- |
 | `repo_harvester_server/config.py`                    | Fuseki endpoint URL          |
-| `repo_harvester_server/SG4 FIDELIS repos.csv`        | Repositories to harvest      |
+| `repo_harvester_server/data/SG4 FIDELIS repos.csv`   | Repositories to harvest      |
 | `repo_harvester_server/services_default_queries.csv` | Service protocol definitions |
 
 ## Troubleshooting

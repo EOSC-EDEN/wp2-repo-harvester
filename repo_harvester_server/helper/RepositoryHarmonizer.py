@@ -23,8 +23,8 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
 
-# Maintained by fidelis_scrape/fidelis_scraper.py, not on the repo (should it be?)
-MEMBERS_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'SG4 FIDELIS repos.csv')
+# Maintained by data/fidelis_scraper.py
+MEMBERS_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'SG4 FIDELIS repos.csv')
 
 
 def _norm_url(url):

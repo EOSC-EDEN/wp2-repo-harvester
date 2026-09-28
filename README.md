@@ -55,4 +55,4 @@ curl "http://localhost:8080/api/?url=https://pangaea.de"
 | `schema/context.jsonld`                       | JSON-LD context (DCAT, Dublin Core mappings) |
 | `schema/examples/full_registry_graph.json`    | Example output for frontend/ElasticSearch    |
 | `repo_harvester_server/helper/`               | Core harvesting logic                        |
-| `repo_harvester_server/SG4 FIDELIS repos.csv` | Master repository list                       |
+| `repo_harvester_server/data/SG4 FIDELIS repos.csv` | Master repository list                  |
