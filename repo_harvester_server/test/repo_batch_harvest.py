@@ -5,7 +5,7 @@ import sys
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 
 # Configuration
-CSV_FILE = os.path.join(os.path.dirname(__file__), '..', 'FIDELIS repos.csv')
+CSV_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'SG4 FIDELIS repos.csv')
 OUTPUT_DIR = "output"
 
 def main():

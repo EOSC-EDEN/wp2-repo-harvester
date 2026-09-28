@@ -32,6 +32,7 @@ from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvest
 CSV_FILE = os.path.join(
     os.path.dirname(__file__),
     'repo_harvester_server',
+    'data',
     'SG4 FIDELIS repos.csv'
 )
 OUTPUT_DIR = "output"
