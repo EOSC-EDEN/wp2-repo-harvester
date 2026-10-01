@@ -18,7 +18,8 @@ import os
 from repo_harvester_server.helper.GraphHelper import JSONGraph
 from repo_harvester_server.helper.HarvestSession import build_session
 from repo_harvester_server.helper.SignPostingHelper import SignPostingHelper
-from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, POLICY_INFO_QUERY, REPO_INFO_QUERY, DCAT_EXPORT_QUERY
+from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, POLICY_INFO_QUERY, REPO_INFO_QUERY, \
+    DCAT_EXPORT_QUERY, CERTIFICATE_INFO_QUERY
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 from jsonschema import validate
@@ -335,6 +336,7 @@ class MetadataHelper:
                     extracted = self.get_jsonld_metadata(script_content)
                 else:
                     extracted = self.get_jsonld_metadata_simple(script_content)
+
                 metadata.update(extracted)
         except Exception as e:
             self.logger.error("Error processing JSON-LD: " + str(e))
@@ -489,6 +491,7 @@ class MetadataHelper:
                         metadata['subject'] = _flatten_subjects(metadata['subject'])
                     services = []
                     policies = []
+                    certificates = []
                     for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
                         service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
                         if service_res.get('endpoint_uri'):
@@ -517,6 +520,12 @@ class MetadataHelper:
 
                     if policies:
                         metadata['policies'] = policies
+
+                    for certificate_node in sg.getNodesByType(['Certification', 'QualityCertificate']):
+                        certificate_res = jmespath.search(CERTIFICATE_INFO_QUERY, certificate_node.get('graph'))
+                        certificates.append(certificate_res)
+                    if certificates:
+                        metadata['certificates'] = certificates
             except Exception as e:
                 self.logger.error("JSON parse error: " + str(e))
 

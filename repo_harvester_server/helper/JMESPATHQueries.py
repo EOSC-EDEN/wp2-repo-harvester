@@ -92,7 +92,7 @@ contact: ([contactPoint]||contactPoint[])[].{
     url: url||hasURL.hasValue||hasUrl||null 
 } || null,
 subject: [subjects, keyword, keywords, theme][] || null,
-license: license.url ||license."@id" || license.id || license.name || license || null 
+license: license.url ||license."@id" || license.id || license.name || license || null
 }
 '''
 
@@ -110,6 +110,14 @@ POLICY_INFO_QUERY = '''{
 policy_uri:  url || "@id",
 type : ["@type", additionalType][],
 title: title || name || null
+}'''
+
+CERTIFICATE_INFO_QUERY = '''{
+url: url || homepage || hasBody || "@id",
+issuer: issuedBy.name || issuedBy.url || creator || publisher || null,
+issued: datePublished || dateCreated || issued || created || null , 
+expires: expires || valid || null,
+active: type == CertificationActive
 }'''
 
 # a jmespath query to parse metadata delivered by the FAIRsharing API
