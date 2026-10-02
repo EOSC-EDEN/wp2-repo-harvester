@@ -28,8 +28,8 @@ class Re3DataHarvester:
     logger = logging.getLogger('Re3DataHarvester')
 
     def __init__(self):
-        self.api_url = "https://www.re3data.org/api/beta"
-        self.ns = {"r3d": "http://www.re3data.org/schema/2-2"}
+        self.api_url = "https://www.re3data.org/api/v40"
+        self.ns = {"r3d": "http://www.re3data.org/schema/4-0"}
         # One session for the search plus every record fetch it triggers:
         # re3data is our heaviest caller, so connection reuse matters most here.
         self.session = requests.Session()
@@ -331,7 +331,7 @@ class Re3DataHarvester:
             repo_root = self._fetch_and_parse_record_xml(candidate['id'])
             if repo_root is None:
                 continue
-            url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
+            url_element = repo_root.find('.//r3d:repositoryUrl', self.ns)
             if url_element is None or not url_element.text:
                 continue
             records.append({
@@ -416,12 +416,12 @@ class Re3DataHarvester:
 
             elif search_type == 'hostname':
                 # For hostname verification, we still need to fetch the full record to get the URL
-                # because the search result list doesn't include the repositoryURL.
+                # because the search result list doesn't include the repositoryUrl.
                 repo_root = self._fetch_and_parse_record_xml(repo_id)
                 if repo_root is None:
                     continue
 
-                repo_main_url_element = repo_root.find('.//r3d:repositoryURL', self.ns)
+                repo_main_url_element = repo_root.find('.//r3d:repositoryUrl', self.ns)
                 if repo_main_url_element is not None and repo_main_url_element.text:
                     re3data_hostname = urlparse(repo_main_url_element.text).hostname
 
@@ -436,7 +436,7 @@ class Re3DataHarvester:
 
     def harvest_by_id(self, re3data_id):
         """
-        Harvests metadata directly from re3data using its re3data.orgIdentifier.
+        Harvests metadata directly from re3data using its re3data ID (r3d...).
         """
         self.logger.info(f"-- Harvesting from re3data by ID: {re3data_id} --")
         repo_root = self._fetch_and_parse_record_xml(re3data_id)
@@ -475,7 +475,7 @@ class Re3DataHarvester:
 
     def _parse_record(self, repo_root):
         """
-        Parses the detailed XML for a specific repository from re3data.
+        Parses the detailed XML for a specific repository from re3data (schema 4.0).
         """
         # General purpose helper for single-value text fields
         def find_text(element, path):
@@ -492,23 +492,23 @@ class Re3DataHarvester:
         for inst_element in repo_root.findall(".//r3d:institution", self.ns):
             inst_name = find_text(inst_element, 'r3d:institutionName')
             inst_country = find_text(inst_element, 'r3d:institutionCountry')
-            inst_url = find_text(inst_element, 'r3d:institutionURL')
+            inst_url = find_text(inst_element, 'r3d:institutionUrl')
             if re.match(r'^[A-Z]{3}$', str(inst_country)):
                 if inst_country in country_codes_3:
                     inst_country = country_codes_3[inst_country]
             if inst_name:
                 publishers.append({"type": "org:Organization", "name": inst_name, "country": inst_country, "url": inst_url})
         contact = {}
-        for contact_elem in repo_root.findall(".//r3d:repositoryContact", self.ns):
-            if '@' in contact_elem.text:
-                contact['email'] = contact_elem.text
-            elif 'http' in contact_elem.text:
-                contact['url'] = contact_elem.text
+        for info in find_all_text(repo_root, ".//r3d:repositoryContact/r3d:repositoryContactInformation"):
+            if '@' in info:
+                contact['email'] = info
+            elif 'http' in info:
+                contact['url'] = info
         # --- Service Extraction (Handles Multiple) ---
         services = []
         for api_elem in repo_root.findall(".//r3d:api", self.ns):
-            api_type = api_elem.get('apiType')
-            api_url = api_elem.text.strip() if api_elem.text else None
+            api_type = find_text(api_elem, 'r3d:apiType')
+            api_url = find_text(api_elem, 'r3d:apiUrl')
             if api_url:
                 services.append({
                     'endpoint_uri': api_url,
@@ -518,8 +518,8 @@ class Re3DataHarvester:
                     #'title': f"{api_type} API" if api_type else "API Service"
                 })
         for syndication_elem in repo_root.findall(".//r3d:syndication", self.ns):
-            syndication_type = syndication_elem.get('syndicationType')
-            syndication_url = syndication_elem.text.strip() if syndication_elem.text else None
+            syndication_type = find_text(syndication_elem, 'r3d:syndicationType')
+            syndication_url = find_text(syndication_elem, 'r3d:syndicationUrl')
             if syndication_url:
                 services.append({
                     'endpoint_uri': syndication_url,
@@ -532,18 +532,19 @@ class Re3DataHarvester:
         
         # --- Identifier Extraction (Handles Multiple) ---
         identifiers = [
-            find_text(repo_root, ".//r3d:re3data.orgIdentifier"),
-            find_text(repo_root, ".//r3d:repositoryURL")
-        ] + find_all_text(repo_root, ".//r3d:repositoryIdentifier")
+            find_text(repo_root, ".//r3d:identifiers/r3d:re3data"),
+            find_text(repo_root, ".//r3d:identifiers/r3d:doi"),
+            find_text(repo_root, ".//r3d:repositoryUrl")
+        ] + find_all_text(repo_root, ".//r3d:repositoryIdentifier/r3d:repositoryIdentifierValue")
 
         policies = []
         for policy_elem in repo_root.findall(".//r3d:policy", self.ns):
             policy_name =  find_text(policy_elem, 'r3d:policyName')
-            policy_url = find_text(policy_elem, 'r3d:policyURL')
+            policy_url = find_text(policy_elem, 'r3d:policyUrl')
             policies.append({'policy_uri':policy_url, 'title': policy_name})
 
         keywords = find_all_text(repo_root, ".//r3d:keyword")
-        keywords.extend(find_all_text(repo_root, ".//r3d:subject"))
+        keywords.extend(find_all_text(repo_root, ".//r3d:subject/r3d:subjectName"))
         clean_keywords = []
         for kw in keywords:
             #clean DFG style subjects
@@ -562,6 +563,6 @@ class Re3DataHarvester:
             'policies': policies if policies else None,
             'keywords': find_all_text(repo_root, ".//r3d:keyword"),
             'subject': keywords if keywords else None,
-            'license': find_text(repo_root, ".//r3d:dataLicenseURL") or find_text(repo_root, ".//r3d:dataLicenseName"),
+            'license': find_text(repo_root, ".//r3d:dataLicense/r3d:dataLicenseUrl") or find_text(repo_root, ".//r3d:dataLicense/r3d:dataLicenseName"),
         }
         return {k: v for k, v in metadata.items() if v}
