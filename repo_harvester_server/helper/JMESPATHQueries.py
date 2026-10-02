@@ -70,6 +70,20 @@ DCAT_EXPORT_QUERY = '''
   "@id": policy_uri,
   "@type": ['dct:Policy', type][],
   "dct:title": title || null
+  },
+  "dqv:hasQualityAnnotation": certificates[].{
+      "@type": 'dqv:QualityCertificate',
+      "oa:motivatedBy": {"@id": 'dqv:qualityAssessment'},
+      "oa:hasTarget": target && {"@id": target} || null,
+      "prov:hadPrimarySource": hadPrimarySource || null,
+      "oa:hasBody": url && {"@id": url} || null,
+      "dct:title": name || null,
+      "dct:creator": issuer || null,
+      "dct:issued": issued || null,
+      "dct:valid": expires || null,
+      "schema:certificationStatus": active == `true` && {"@id": 'schema:CertificationActive'}
+                                    || active == `false` && {"@id": 'schema:CertificationInactive'}
+                                    || null
   }
 }}
 '''
@@ -114,6 +128,7 @@ title: title || name || null
 
 CERTIFICATE_INFO_QUERY = '''{
 url: url || homepage || hasBody || "@id",
+name: name || title || null,
 issuer: issuedBy.name || issuedBy.url || creator || publisher || null,
 issued: datePublished || dateCreated || issued || created || null , 
 expires: expires || valid || null,
