@@ -117,7 +117,7 @@ url: url || homepage || hasBody || "@id",
 issuer: issuedBy.name || issuedBy.url || creator || publisher || null,
 issued: datePublished || dateCreated || issued || created || null , 
 expires: expires || valid || null,
-active: type == CertificationActive
+active: certificationStatus == 'CertificationActive'
 }'''
 
 # a jmespath query to parse metadata delivered by the FAIRsharing API
