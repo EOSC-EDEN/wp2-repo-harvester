@@ -9,7 +9,7 @@ import requests
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
 
-RE3DATA_NS = "http://www.re3data.org/schema/2-2"
+RE3DATA_NS = "http://www.re3data.org/schema/4-0"
 
 
 def _response(content):
@@ -34,7 +34,7 @@ def _record_xml(name, repository_url):
     return (
         f'<r3d:repository xmlns:r3d="{RE3DATA_NS}">'
         f"<r3d:repositoryName>{name}</r3d:repositoryName>"
-        f"<r3d:repositoryURL>{repository_url}</r3d:repositoryURL>"
+        f"<r3d:repositoryUrl>{repository_url}</r3d:repositoryUrl>"
         "</r3d:repository>"
     ).encode()
 

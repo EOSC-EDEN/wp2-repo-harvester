@@ -582,8 +582,8 @@ class TestRe3DataRecordFetchHonesty:
             b'</list>'
         )
         record_xml = (
-            b'<r3d:repository xmlns:r3d="http://www.re3data.org/schema/2-2">'
-            b'<r3d:repositoryURL>https://data.example.org/</r3d:repositoryURL>'
+            b'<r3d:repository xmlns:r3d="http://www.re3data.org/schema/4-0">'
+            b'<r3d:repositoryUrl>https://data.example.org/</r3d:repositoryUrl>'
             b'<r3d:repositoryName>Second</r3d:repositoryName>'
             b'</r3d:repository>'
         )
