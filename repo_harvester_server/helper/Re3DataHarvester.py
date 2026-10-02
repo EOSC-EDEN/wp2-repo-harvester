@@ -5,6 +5,7 @@ import requests
 from urllib.parse import urlparse
 
 from repo_harvester_server.helper import UrlMatching
+from repo_harvester_server.helper.CertificateHelper import clean_certificate
 from lxml import etree
 import os
 import csv
@@ -543,6 +544,15 @@ class Re3DataHarvester:
             policy_url = find_text(policy_elem, 'r3d:policyUrl')
             policies.append({'policy_uri':policy_url, 'title': policy_name})
 
+        # Names verbatim, "other" included: for a repository whose own page says
+        # nothing, re3data may be the only certification signal there is.
+        certificates = [clean_certificate({
+            'name': find_text(cert_elem, 'r3d:certificateName'),
+            'url': find_text(cert_elem, 'r3d:certificateUrl'),
+            'issued': find_text(cert_elem, 'r3d:certificateStartDate'),
+            'expires': find_text(cert_elem, 'r3d:certificateEndDate'),
+        }) for cert_elem in repo_root.findall(".//r3d:certificate", self.ns)]
+
         keywords = find_all_text(repo_root, ".//r3d:keyword")
         keywords.extend(find_all_text(repo_root, ".//r3d:subject/r3d:subjectName"))
         clean_keywords = []
@@ -564,5 +574,6 @@ class Re3DataHarvester:
             'keywords': find_all_text(repo_root, ".//r3d:keyword"),
             'subject': keywords if keywords else None,
             'license': find_text(repo_root, ".//r3d:dataLicense/r3d:dataLicenseUrl") or find_text(repo_root, ".//r3d:dataLicense/r3d:dataLicenseName"),
+            'certificates': [c for c in certificates if c],
         }
         return {k: v for k, v in metadata.items() if v}

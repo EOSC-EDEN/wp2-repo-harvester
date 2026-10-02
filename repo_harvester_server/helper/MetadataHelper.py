@@ -20,6 +20,7 @@ from repo_harvester_server.helper.HarvestSession import build_session
 from repo_harvester_server.helper.SignPostingHelper import SignPostingHelper
 from repo_harvester_server.helper.JMESPATHQueries import SERVICE_INFO_QUERY, POLICY_INFO_QUERY, REPO_INFO_QUERY, \
     DCAT_EXPORT_QUERY, CERTIFICATE_INFO_QUERY
+from repo_harvester_server.helper.CertificateHelper import clean_certificate
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 from jsonschema import validate
@@ -522,8 +523,9 @@ class MetadataHelper:
                         metadata['policies'] = policies
 
                     for certificate_node in sg.getNodesByType(['Certification', 'QualityCertificate']):
-                        certificate_res = jmespath.search(CERTIFICATE_INFO_QUERY, certificate_node.get('graph'))
-                        certificates.append(certificate_res)
+                        certificate_res = clean_certificate(jmespath.search(CERTIFICATE_INFO_QUERY, certificate_node.get('graph')))
+                        if certificate_res:
+                            certificates.append(certificate_res)
                     if certificates:
                         metadata['certificates'] = certificates
             except Exception as e:
