@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from collections import Counter
+from datetime import datetime
 from functools import lru_cache
 
 import jmespath
@@ -50,6 +51,23 @@ def fidelis_member_urls():
         logging.getLogger('RepositoryHarmonizer').warning(
             'FIDELIS membership unknown, %s not readable: %s', MEMBERS_CSV, e)
         return frozenset()
+
+
+def _merge_certificates(records, catalog_id):
+    """One annotation per certificate: grouped by url, or by issuer/name when a
+    source has no url. Fields from every source are combined, so the page's
+    status and re3data's dates end up on the same annotation. On a conflict the
+    claim with more fields wins, then the source name, which keeps the result
+    independent of the order FUSEKI returns graphs in."""
+    merged = {}
+    for r in sorted(records, key=lambda r: (-len(r['value']), r['source'])):
+        cert = r['value']
+        key = (cert.get('url') or cert.get('issuer') or cert.get('name')).strip().lower()
+        m = merged.setdefault(key, {'target': catalog_id, 'hadPrimarySource': []})
+        for field, value in cert.items():
+            m.setdefault(field, value)
+        m['hadPrimarySource'].append(f"eden://harvester/{r['source']}/{catalog_id}")
+    return list(merged.values())
 
 
 class RepositoryHarmonizer:
@@ -114,6 +132,7 @@ class RepositoryHarmonizer:
 
 
 
+        started = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         combined = {}
         basic_props = ['title', 'description', 'publisher', 'contact']
 
@@ -146,6 +165,7 @@ class RepositoryHarmonizer:
         catalog_info = {"id": self.repouri, "hadPrimarySource": []}
         service_info = []
         policy_info = []
+        certificate_info = []
 
         for k, v in combined.items():
             sources = [f'eden://harvester/{s.get("source")}/{self.repouri}' for s in v if s.get('source')]
@@ -156,6 +176,8 @@ class RepositoryHarmonizer:
                 service_info.extend(v)
             elif k == 'policies':
                 policy_info.extend(v)
+            elif k == 'certificates':
+                certificate_info.extend(v)
             else:
                 values = [clean_value(vl.get("value")) for vl in v]
                 catalog_info[k] = list(set(catalog_info.get(k, []) + values))
@@ -169,6 +191,7 @@ class RepositoryHarmonizer:
         catalog_info["services"] = self.merge(service_info,
                                               merge_fields=["title", "type", "conforms_to", "output_format"],
                                               key_field="endpoint_uri", catalog_id=self.repouri)
+        catalog_info["certificates"] = _merge_certificates(certificate_info, self.repouri)
         # Titles + DQV validation as a separate stage, keeping live endpoint
         # checks out of the merge logic above (still one write per harvest run).
         self.enrich_services_with_validation(catalog_info)
@@ -176,8 +199,12 @@ class RepositoryHarmonizer:
 
         merged_catalog_dcat = self.clean_none(jmespath.search(DCAT_EXPORT_QUERY, catalog_info))
 
+        # Every value here is as of this harmonization; without the date nobody
+        # reading the graph can tell how old, say, a certification status is.
+        merged_catalog_dcat["dct:issued"] = started
         if merged_catalog_dcat.get("prov:wasGeneratedBy"):
             merged_catalog_dcat["prov:wasGeneratedBy"]["rdfs:label"] = 'Metadata harmonizing activity'
+            merged_catalog_dcat["prov:wasGeneratedBy"]["prov:startedAtTime"] = started
         merged_uri = f"eden://harvester/harmonized/"+str(self.repouri)
         merged_catalog_dcat["@id"] = merged_uri
 
