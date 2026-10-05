@@ -132,8 +132,12 @@ name: name || title || null,
 issuer: issuedBy.name || issuedBy.url || creator || publisher || null,
 issued: datePublished || dateCreated || issued || created || null , 
 expires: expires || valid || null,
-active: certificationStatus == 'CertificationActive'
+active: certificationStatus && contains(to_string(certificationStatus), 'CertificationActive')
 }'''
+
+#certificationStatus && contains(to_string(certificationStatus), 'CertificationActive')
+#certificationStatus == 'CertificationActive'
+
 
 # a jmespath query to parse metadata delivered by the FAIRsharing API
 FAIRSHARING_QUERY ='''
