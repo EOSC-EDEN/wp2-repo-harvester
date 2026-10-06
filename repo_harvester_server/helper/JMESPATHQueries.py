@@ -110,13 +110,17 @@ license: license.url ||license."@id" || license.id || license.name || license ||
 }
 '''
 
-# a jmespath query to retrieve service info in graphs containing WebAPI, Service or similar objects
+# a jmespath query to retrieve service info in graphs containing WebAPI, Service or similar objects.
+# conformsTo names the standard, documentation often only a manual, so the standard
+# goes out as conforms_to. spec_candidates feeds profile matching only: MetadataHelper
+# pops it, so a recognisable documentation URL can still type the service.
 SERVICE_INFO_QUERY  = '''{
 endpoint_uri : url || target.urlTemplate || target.url || target || endpointURL || landingPage || null,
 type : type || "@type",
 title : title || name || null,
 output_format: serviceOutput.identifier || mediaType || null,
-conforms_to: documentation || conformsTo
+conforms_to: conformsTo || documentation,
+spec_candidates: [conformsTo, documentation][]
 }'''
 
 # a jmespath to identify policies in graphs containing Policy objects
