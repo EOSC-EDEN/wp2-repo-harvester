@@ -80,7 +80,10 @@ class SignPostingHelper:
         self.set_header_links()
         self.set_linkset_links(self.get_linksets())
         self.set_linkset_links(self.get_api_linksets())
-        unique_links =list({d["link"]: d for d in self.links}.values())
+        # A link is anchor + rel + target. FAIRiCat linksets (can) point many anchors at
+        # one shared document (one service-meta file for every endpoint), so the
+        # target alone is not enough to call two links the same.
+        unique_links = list({(d.get("anchor"), d.get("rel"), d.get("link")): d for d in self.links}.values())
         self.links = unique_links
         #print('LINKS: ', self.links)
 

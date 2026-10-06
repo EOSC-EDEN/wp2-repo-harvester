@@ -479,6 +479,8 @@ class RepositoryHarvester:
             self.attempted_sources.append('linked_jsonld')
             self.metadata_helper.signposting_helper.logger.info("Trying to find metadata using signposting links")
             signposting_links = self.metadata_helper.signposting_helper.get_links('describedby', 'application/ld+json')
+            # Links are unique per anchor, documents are fetched once.
+            signposting_links = list({l.get('link'): l for l in signposting_links}.values())
             if not signposting_links:
                 self.metadata_helper.signposting_helper.logger.warning("No signposting links found")
             elif len(signposting_links) > MAX_DESCRIBEDBY_LINKS:
