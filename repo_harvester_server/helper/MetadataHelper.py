@@ -495,6 +495,7 @@ class MetadataHelper:
                     certificates = []
                     for service_node in sg.getNodesByType(['Service', 'WebAPI', 'DataService','SearchAction']):
                         service_res = jmespath.search(SERVICE_INFO_QUERY, service_node.get('graph'))
+                        spec_candidates = service_res.pop('spec_candidates', None)
                         if service_res.get('endpoint_uri'):
                             if isinstance(service_res['endpoint_uri'], str):
                                 #safe identifiers e.g. replace curly urls in url patterns like: https://example.com?query={query_string}
@@ -503,9 +504,14 @@ class MetadataHelper:
                                     service_res['output_format'] = 'text/html'
                                     service_res['conforms_to'] = 'https://www.ietf.org/rfc/rfc2616' #http (default)
                                 else:
-                                    stype =  self.service_info_helper.type(service_res.get('conforms_to'))
-                                    if stype:
-                                       service_res['type'] = stype
+                                    # DataService, WebAPI and the like say nothing about the
+                                    # protocol, and every renderer shows type before title.
+                                    # The raw type goes last: it is a profile label only when the
+                                    # harmonizer re-reads our own export, which keeps conformsTo
+                                    # but not the documentation URL the type may have come from.
+                                    raw_type = service_res.get('type')
+                                    raw_type = raw_type if isinstance(raw_type, list) else [raw_type]
+                                    service_res['type'] = self.service_info_helper.type(spec_candidates + raw_type)
                                 services.append(service_res)
                             else:
                                 self.logger.info('service endpoint URI seems to be an object: '+str(service_res['endpoint_uri']))

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from urllib.parse import urlsplit, urlunsplit
 
 try:  # stdlib since 3.8; guarded so a source checkout without dist metadata still runs
     from importlib.metadata import PackageNotFoundError, version as _dist_version
@@ -75,6 +76,21 @@ def _validator_agent():
     return agent
 
 
+def _spec_key(url):
+    """Spec URLs are typed by hand on both sides, so http vs https, host case and a
+    trailing slash must not decide whether a service is recognised. Path case
+    does: it is significant in a URL. Non-web schemes (ivo://) keep their own."""
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        # An unbalanced '[' in the host. These come from pages, and one bad value
+        # must not take the page's other services down with it.
+        return url.strip()
+    scheme = 'https' if parts.scheme in ('http', 'https') else parts.scheme
+    return urlunsplit((scheme, parts.netloc.lower(), parts.path.rstrip('/'),
+                       parts.query, parts.fragment))
+
+
 class ServiceInfoHelper(object):
     logger = logging.getLogger('ServiceInfoHelper')
     _validator = None  # lazily created ServiceValidator, shared across instances
@@ -89,7 +105,7 @@ class ServiceInfoHelper(object):
                 if profile.get('spec_urls'):
                     for spec in profile.get('spec_urls'):
                         if spec.get('url'):
-                         self.profile_specs[spec['url']] = {"title": profile["title"], "fairsharing_doi": profile["fairsharing_doi"], "label": profile_label}
+                         self.profile_specs[_spec_key(spec['url'])] = {"title": profile["title"], "fairsharing_doi": profile["fairsharing_doi"], "label": profile_label}
 
     @classmethod
     def _get_validator(cls):
@@ -194,13 +210,18 @@ class ServiceInfoHelper(object):
         return measurements
 
     def type(self, name_or_url):
-        if self.service_profiles.get(name_or_url):
-            return name_or_url
-        else:
-            if self.profile_specs.get(name_or_url):
-                return self.profile_specs[name_or_url].get('label')
-            else:
-                return None
+        """Profile label for a profile name or any of its spec URLs. Takes a list,
+        first match wins, because documentation and conformsTo can each hold several."""
+        candidates = name_or_url if isinstance(name_or_url, list) else [name_or_url]
+        for candidate in candidates:
+            if not isinstance(candidate, str) or not candidate.strip():
+                continue
+            if candidate in self.service_profiles:
+                return candidate
+            spec = self.profile_specs.get(_spec_key(candidate))
+            if spec:
+                return spec['label']
+        return None
 
     def conforms_to(self, name):
         if self.service_profiles.get(name):
