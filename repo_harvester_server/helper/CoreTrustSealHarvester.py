@@ -118,5 +118,5 @@ class CoreTrustSealHarvester(object):
             self.logger.warning("Retrieving CoreTrustSeal data failed "+str(e))
         return data
 
-cts = CoreTrustSealHarvester()
-print(cts.harvest(catalog_url=None, repository_name="PANGAEA"))
+#cts = CoreTrustSealHarvester()
+#print(cts.harvest(catalog_url=None, repository_name="PANGAEA"))
