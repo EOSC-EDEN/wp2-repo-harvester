@@ -59,6 +59,12 @@ def normalize_url(url):
     """
     if not url:
         return None
+    # URLs often come as 'www.example.com' (without a scheme). urlparse can't handle those, meaning we'd miss a lot of matches.
+    # Prepending a scheme if none is present here is acceptable only because nothing is ever fetched from that URL
+    # This is just a workaround to urlparse only finding the host after '//'. Without it, the whole thing would land in the path.
+    if '://' not in url:
+        url = 'https://' + url.strip()
+
     parsed = urlparse(url.strip())
     hostname = normalize_hostname(parsed.hostname)
     try:
