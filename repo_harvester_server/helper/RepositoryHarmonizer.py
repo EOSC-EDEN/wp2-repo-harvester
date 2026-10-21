@@ -16,6 +16,7 @@ from repo_harvester_server.helper.JMESPATHQueries import DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.GraphHelper import JSONGraph
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
+from repo_harvester_server.id_to_iri import resolve_identifier
 
 import logging
 
@@ -68,6 +69,33 @@ def _merge_certificates(records, catalog_id):
             m.setdefault(field, value)
         m['hadPrimarySource'].append(f"eden://harvester/{r['source']}/{catalog_id}")
     return list(merged.values())
+
+
+def _normalize_identifiers(identifiers, logger=None):
+    """Normalize a list of raw identifier strings into deduplicated,
+    machine-actionable IRIs using idutils/resolve_identifier."""
+    if not identifiers:
+        return []
+
+    if isinstance(identifiers, (str, bytes)):
+        identifiers = [identifiers]
+
+    normalized_pids = set()
+    for raw_id in identifiers:
+        if not raw_id:
+            continue
+        cleaned = str(raw_id).strip().strip("<>").strip('"').strip("'")
+        if not cleaned:
+            continue
+        try:
+            resolution = resolve_identifier(cleaned)
+            normalized_pids.add(resolution.iri)
+        except ValueError as e:
+            if logger:
+                logger.debug("Could not resolve identifier %r: %s", cleaned, e)
+            normalized_pids.add(cleaned)
+
+    return list(normalized_pids)
 
 
 class RepositoryHarmonizer:
@@ -184,6 +212,11 @@ class RepositoryHarmonizer:
 
         if isinstance(catalog_info.get("subject"), list):
             catalog_info["subject"] = list({kw.lower() for kw in catalog_info["subject"]})
+
+        if "identifier" in catalog_info:
+            catalog_info["identifier"] = _normalize_identifiers(
+                catalog_info["identifier"], logger=self.logger
+            )
 
         catalog_info["hadPrimarySource"] = list(set(catalog_info["hadPrimarySource"]))
         catalog_info["policies"] = self.merge(policy_info, merge_fields=["title", "type"],
