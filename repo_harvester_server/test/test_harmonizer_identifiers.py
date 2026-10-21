@@ -19,6 +19,8 @@ def test_normalize_identifiers_deduplication():
         "https://doi.org/10.1594/PANGAEA",
         "doi:10.1594/PANGAEA",
         "r3d100010134",
+        "SAMN12345678",
+        "https://www.ebi.ac.uk/ena/data/view/samn12345678",
         "https://www.re3data.org/repository/r3d100010134",
         "https://pangaea.de/",
         "urn:uuid:b3391b53-23c2-473a-9d2e-72674f2b42bd",
@@ -29,6 +31,7 @@ def test_normalize_identifiers_deduplication():
         "https://www.re3data.org/repository/r3d100010134",
         "https://pangaea.de/",
         "urn:uuid:b3391b53-23c2-473a-9d2e-72674f2b42bd",
+        "https://www.ebi.ac.uk/ena/data/view/samn12345678",
     }
 
 
