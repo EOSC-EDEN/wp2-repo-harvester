@@ -30,7 +30,8 @@ logger = logging.getLogger('RegistryCache')
 # What one consultation of the registries produced. A namedtuple so a cached
 # entry cannot be reshaped by a reader; the dicts and lists inside it are still
 # mutable, which is why the cache hands out deep copies.
-RegistryResult = namedtuple('RegistryResult', 're3data fairsharing degraded')
+RegistryResult = namedtuple('RegistryResult', 're3data fairsharing degraded coretrustseal',
+                            defaults=(None,))
 
 # Registry records change on the scale of months, so an hour is conservative.
 # Short enough that an operator who has just registered their repository can

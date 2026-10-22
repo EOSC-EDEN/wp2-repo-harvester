@@ -18,6 +18,7 @@ import threading
 
 from repo_harvester_server import config
 from repo_harvester_server.demo.check_help import help_for
+from repo_harvester_server.helper.CoreTrustSealHarvester import CoreTrustSealHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
 from repo_harvester_server.helper.RegistryCache import RegistryCache
 from repo_harvester_server.helper.RegistryHTTP import RegistryUnavailableError
@@ -48,6 +49,11 @@ _harvest_slots = threading.BoundedSemaphore(MAX_CONCURRENT_HARVESTS)
 # operator who fixes their JSON-LD and resubmits has to see the fix; that is
 # what this tool is for.
 _registry_cache = RegistryCache()
+
+# One CoreTrustSeal certificate list per process, fetched on first use and
+# refreshed daily. Building it costs nothing, so unlike FAIRsharing below it
+# needs no lazy construction.
+_coretrustseal_harvester = CoreTrustSealHarvester()
 
 # One FAIRsharing sign-in per process instead of one per visitor. Built lazily
 # so a deployment with FAIRsharing switched off never signs in at all.
@@ -388,6 +394,7 @@ def run_interactive_harvest(url):
             url,
             persist=config.PERSISTENCE_ENABLED,
             fairsharing_harvester=shared_fairsharing_harvester(),
+            coretrustseal_harvester=_coretrustseal_harvester,
             registry_cache=_registry_cache,
         )
         harvester.harvest_self_hosted_metadata()

@@ -26,6 +26,7 @@ from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper, FusekiAuthError
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
+from repo_harvester_server.helper.CoreTrustSealHarvester import CoreTrustSealHarvester
 
 
 # Configuration
@@ -125,7 +126,7 @@ def make_safe_filename(name):
 
 
 def harvest_repository(url, name, run_id=None, re3data_harvester=None,
-                       fairsharing_harvester=None):
+                       fairsharing_harvester=None, coretrustseal_harvester=None):
     """
     Harvest a single repository.
     Returns (result_dict, stages) where stages holds the per-stage outcome:
@@ -142,6 +143,7 @@ def harvest_repository(url, name, run_id=None, re3data_harvester=None,
         url, run_id=run_id,
         re3data_harvester=re3data_harvester,
         fairsharing_harvester=fairsharing_harvester,
+        coretrustseal_harvester=coretrustseal_harvester,
         repository_name=name,
         persist=True,
     )
@@ -334,6 +336,8 @@ def main():
     # A failed sign-in does NOT stop the run — the repositories still get
     # harvested from re3data and their own landing pages.
     re3data_harvester = Re3DataHarvester()
+    # Fetches CoreTrustSeal's certificate list once, on first use.
+    coretrustseal_harvester = CoreTrustSealHarvester()
     fairsharing_harvester = FAIRsharingHarvester()
     if not fairsharing_harvester.jwt_token:
         print("\nWARNING: FAIRsharing sign-in failed.")
@@ -370,6 +374,7 @@ def main():
                 url, name, run_id=run_id,
                 re3data_harvester=re3data_harvester,
                 fairsharing_harvester=fairsharing_harvester,
+                coretrustseal_harvester=coretrustseal_harvester,
             )
 
             # Save to file

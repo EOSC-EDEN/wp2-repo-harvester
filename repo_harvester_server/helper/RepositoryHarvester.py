@@ -19,6 +19,7 @@ logging.basicConfig(
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.Re3DataHarvester import Re3DataHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
+from repo_harvester_server.helper.CoreTrustSealHarvester import CoreTrustSealHarvester
 from repo_harvester_server.helper.RegistryCache import (
     CacheWaitTimeout,
     RegistryResult,
@@ -49,13 +50,14 @@ class RepositoryHarvester:
         'sitemap_service': 'Sitemap Service Discovery',
         'open_search': 'OpenSearch Service Discovery',
         're3data': 're3data.org Registry Harvesting',
-        'fairsharing': 'FAIRsharing.org Registry Harvesting'
+        'fairsharing': 'FAIRsharing.org Registry Harvesting',
+        'coretrustseal': 'CoreTrustSeal Certificate List Harvesting'
     }
 
     # The registries this harvester knows how to consult. Used to work out what
     # a configuration has switched *off*, which the demo page reports separately
     # from what it tried and failed to reach.
-    REGISTRY_NAMES = ('re3data', 'fairsharing')
+    REGISTRY_NAMES = ('re3data', 'fairsharing', 'coretrustseal')
 
     # Which self-hosted extractors look for services rather than descriptive
     # metadata. The demo page groups its report by this; the split is not
@@ -69,6 +71,7 @@ class RepositoryHarvester:
     REGISTRY_DISPLAY_NAMES = {
         're3data': 're3data',
         'fairsharing': 'FAIRsharing',
+        'coretrustseal': 'CoreTrustSeal',
     }
 
     # Which environment variables each registry needs before it can be used at
@@ -77,12 +80,14 @@ class RepositoryHarvester:
     REGISTRY_CREDENTIAL_ENV = {
         'fairsharing': ('FAIRSHARING_USERNAME', 'FAIRSHARING_PASSWORD'),
         're3data': (),
+        'coretrustseal': (),
     }
 
 
     def __init__(self, catalog_url, run_id=None, re3data_harvester=None,
                  fairsharing_harvester=None, repository_name=None, session=None,
-                 enabled_registries=None, persist=None, registry_cache=None):
+                 enabled_registries=None, persist=None, registry_cache=None,
+                 coretrustseal_harvester=None):
         self.catalog_url = catalog_url
         # The repository's real name, when the caller knows it. A registry
         # search by name beats one by a name guessed from the hostname, which
@@ -95,6 +100,7 @@ class RepositoryHarvester:
         # sign-in covers every repository; a lone API request builds its own.
         self.re3data_harvester = re3data_harvester
         self.fairsharing_harvester = fairsharing_harvester
+        self.coretrustseal_harvester = coretrustseal_harvester
         # Registry lookups may be shared across visitors on a public deployment
         # so thirty people pasting one URL cost one lookup. Batch harvesting
         # passes nothing: each repository appears once, so a cache there is
@@ -264,7 +270,7 @@ class RepositoryHarvester:
         """
         Main entry point.
         1. Tries to harvest directly from the website (Self-Hosted).
-        2. Then harvest information from registries: FAIRsharing & re3data (Registry).
+        2. Then harvest information from registries: re3data, FAIRsharing & CoreTrustSeal (Registry).
         :param where str: default None, the source to be harvested can be either 'self-hosted' or 'registry'
         """
         harvested_records = None
@@ -382,6 +388,7 @@ class RepositoryHarvester:
 
         self.merge_metadata(result.re3data, 're3data')
         self.merge_metadata(result.fairsharing, 'fairsharing')
+        self.merge_metadata(result.coretrustseal, 'coretrustseal')
 
         self.logger.info("--- Finished Registry Harvesting ---")
 
@@ -449,8 +456,17 @@ class RepositoryHarvester:
                     fairsharing_meta.get('title')
                 )
 
+        # 4. CoreTrustSeal last: re3data's DOI and certificate DOIs are its exact keys
+        coretrustseal_meta = None
+        if 'coretrustseal' in self.enabled_registries:
+            coretrustseal_harvester = self.coretrustseal_harvester or CoreTrustSealHarvester()
+            coretrustseal_meta = self._try_registry(
+                'coretrustseal', coretrustseal_harvester.harvest,
+                self.catalog_ids, re3data_meta,
+            )
+
         return RegistryResult(re3data_meta, fairsharing_meta,
-                              list(self.degraded_sources))
+                              list(self.degraded_sources), coretrustseal_meta)
 
     def harmonize(self):
         h = RepositoryHarmonizer(self.catalog_url, run_id=self.run_id)

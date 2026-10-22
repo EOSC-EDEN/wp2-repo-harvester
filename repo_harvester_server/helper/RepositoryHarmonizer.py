@@ -56,11 +56,12 @@ def fidelis_member_urls():
 def _merge_certificates(records, catalog_id):
     """One annotation per certificate: grouped by url, or by issuer/name when a
     source has no url. Fields from every source are combined, so the page's
-    status and re3data's dates end up on the same annotation. On a conflict the
-    claim with more fields wins, then the source name, which keeps the result
+    status and re3data's dates end up on the same annotation. On a conflict
+    CoreTrustSeal wins, as the issuer's own record of its certificates; then
+    the claim with more fields, then the source name, which keeps the result
     independent of the order FUSEKI returns graphs in."""
     merged = {}
-    for r in sorted(records, key=lambda r: (-len(r['value']), r['source'])):
+    for r in sorted(records, key=lambda r: (r['source'] != 'coretrustseal', -len(r['value']), r['source'])):
         cert = r['value']
         key = (cert.get('url') or cert.get('issuer') or cert.get('name')).strip().lower()
         m = merged.setdefault(key, {'target': catalog_id, 'hadPrimarySource': []})

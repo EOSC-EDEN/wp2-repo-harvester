@@ -20,11 +20,11 @@ FUSEKI_PATH = _FUSEKI_PATH_ENV or "http://localhost:3030/service_registry_store/
 PERSISTENCE_ENABLED = _FUSEKI_PATH_ENV is None or bool(_FUSEKI_PATH_ENV.strip())
 
 # Which registries a harvest may consult. FAIRsharing stays off on the public
-# demo until the EDEN service account exists; re3data needs no credentials and
-# has never rate-limited us, so it can be on from the start. Both by default,
-# which is what batch harvesting wants.
+# demo until the EDEN service account exists; re3data and CoreTrustSeal need no
+# credentials and have never rate-limited us, so they can be on from the start.
+# All three by default, which is what batch harvesting wants.
 ENABLED_REGISTRIES = tuple(
     name.strip().lower()
-    for name in os.environ.get("EDEN_ENABLED_REGISTRIES", "re3data,fairsharing").split(",")
+    for name in os.environ.get("EDEN_ENABLED_REGISTRIES", "re3data,fairsharing,coretrustseal").split(",")
     if name.strip()
 )

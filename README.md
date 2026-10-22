@@ -32,7 +32,7 @@ python main.py
 | `FUSEKI_PASSWORD` | Fuseki basic auth password | — |
 | `FAIRSHARING_USERNAME` | FAIRsharing API username | — |
 | `FAIRSHARING_PASSWORD` | FAIRsharing API password | — |
-| `EDEN_ENABLED_REGISTRIES` | Comma-separated registries to consult (`re3data`, `fairsharing`) | `re3data,fairsharing` |
+| `EDEN_ENABLED_REGISTRIES` | Comma-separated registries to consult (`re3data`, `fairsharing`, `coretrustseal`) | `re3data,fairsharing,coretrustseal` |
 | `EDEN_ALLOW_PRIVATE_TARGETS` | Disables the SSRF address check so private/internal targets can be harvested — **must remain unset on a public host**; it lets a submitted URL reach private/internal addresses | unset (checked) |
 
 Then visit http://localhost:8080/ (the HTML demo page) or the Swagger UI at http://localhost:8080/api/ui/, or fetch JSON directly:

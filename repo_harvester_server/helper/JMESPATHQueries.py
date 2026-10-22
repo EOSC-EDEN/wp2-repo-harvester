@@ -140,7 +140,7 @@ active: certificationStatus && contains(to_string(certificationStatus), 'Certifi
 }'''
 
 #certificationStatus && contains(to_string(certificationStatus), 'CertificationActive')
-#certificationStatus == 'CertificationActive'
+#certificationStatus == 'CertificationActive' gives a wrong active:false in some cases after harmonisation
 
 
 # a jmespath query to parse metadata delivered by the FAIRsharing API
