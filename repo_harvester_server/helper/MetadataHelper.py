@@ -376,7 +376,7 @@ class MetadataHelper:
         sitemap_services = []
         if self.catalog_url:
             try:
-                r = self.session.get(str(self.catalog_url).rstrip('/')+'/robots.txt')
+                r = self.session.get(urllib.parse.urljoin(str(self.catalog_url), '/robots.txt'))
                 if r.status_code == 200:
                     m = re.search(r'^Sitemap:\s*(\S+)', r.text, re.MULTILINE)
                     if m:
