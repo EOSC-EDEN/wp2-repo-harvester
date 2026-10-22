@@ -528,7 +528,10 @@ class MetadataHelper:
                     if policies:
                         metadata['policies'] = policies
 
-                    for certificate_node in sg.getNodesByType(['Certification', 'QualityCertificate']):
+                    # EducationalOccupationalCredential carries credentialCategory, the
+                    # term the RDA Common Descriptive Attributes name for certification.
+                    for certificate_node in sg.getNodesByType(['Certification', 'QualityCertificate',
+                                                               'EducationalOccupationalCredential']):
                         certificate_res = clean_certificate(jmespath.search(CERTIFICATE_INFO_QUERY, certificate_node.get('graph')))
                         if certificate_res:
                             certificates.append(certificate_res)

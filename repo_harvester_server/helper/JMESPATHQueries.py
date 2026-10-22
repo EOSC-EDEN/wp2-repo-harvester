@@ -132,8 +132,8 @@ title: title || name || null
 
 CERTIFICATE_INFO_QUERY = '''{
 url: url || homepage || hasBody || "@id",
-name: name || title || null,
-issuer: issuedBy.name || issuedBy.url || creator || publisher || null,
+name: name || title || credentialCategory.name || credentialCategory || null,
+issuer: issuedBy.name || issuedBy.url || recognizedBy.name || recognizedBy.url || creator || publisher || null,
 issued: datePublished || dateCreated || issued || created || null , 
 expires: expires || valid || null,
 active: certificationStatus && contains(to_string(certificationStatus), 'CertificationActive')
