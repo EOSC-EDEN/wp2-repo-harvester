@@ -13,6 +13,10 @@ WORKDIR /app
 
 FROM base AS deps
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN python -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
