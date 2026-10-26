@@ -3,10 +3,9 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Iterable, Optional
 from urllib.parse import quote
 
@@ -39,20 +38,13 @@ SCHEME_PRIORITY = (
 
 
 def resolve_identifier(value: str, preferred_scheme: str | None = None) -> IdentifierResolution:
-    """Return the detected identifier scheme and an actionable IRI.
+    """Return the detected identifier scheme, normalized value, and actionable IRI.
+
+    Prefer specific PID schemes over URL when an identifier matches both.
     Raises ValueError when idutils cannot detect a supported identifier scheme.
     """
 
     identifier = _clean_identifier(value)
-    actionable_pid_url = get_actionable_pid_url(identifier)
-    if actionable_pid_url:
-        normalized = _normalize_identifier(identifier, "url")
-        return IdentifierResolution(
-            original=value,
-            scheme="url",
-            normalized=normalized,
-            iri=actionable_pid_url,
-        )
     schemes = _detect_schemes(identifier)
 
     if preferred_scheme:
@@ -66,7 +58,7 @@ def resolve_identifier(value: str, preferred_scheme: str | None = None) -> Ident
         scheme = _best_scheme(schemes)
 
     normalized = _normalize_identifier(identifier, scheme)
-    iri = _to_actionable_iri(normalized, scheme)
+    iri = get_actionable_pid_url(normalized, scheme) or _to_actionable_iri(normalized, scheme)
     return IdentifierResolution(
         original=value,
         scheme=scheme,
@@ -85,10 +77,14 @@ def _detect_schemes(identifier: str) -> list[str]:
         re3data_scheme = detect_re3data_identifier(identifier)
         if re3data_scheme:
             schemes.append(re3data_scheme)
-    supported_schemes = [scheme for scheme in schemes if scheme in SCHEME_PRIORITY]
+    supported_schemes = [
+        scheme for scheme in schemes
+        if scheme in SCHEME_PRIORITY or idutils.to_url(identifier, scheme)
+    ]
     if not supported_schemes:
         raise ValueError(f"Could not detect a supported identifier scheme for {identifier!r}.")
     return supported_schemes
+
 
 def detect_re3data_identifier(identifier: str) -> Optional[str]:
     """Return 're3data' for a repository URL, prefixed ID, or bare r3d ID."""
@@ -99,20 +95,28 @@ def detect_re3data_identifier(identifier: str) -> Optional[str]:
 
 
 def _best_scheme(schemes: Iterable[str]) -> str:
+    schemes = list(schemes)
     detected = set(schemes)
     for scheme in SCHEME_PRIORITY:
         if scheme in detected:
             return scheme
+    if schemes:
+        return schemes[0]
     raise ValueError(f"No supported identifier scheme found in {sorted(detected)!r}.")
 
-def get_actionable_pid_url(pid: str) -> Optional[str]:
-    id_scheme = idutils.detect_identifier_schemes(pid)
-    if not id_scheme:
-        return None
-    pidx = idutils.to_url(pid, id_scheme[0])
+
+def get_actionable_pid_url(pid: str, scheme: str | None = None) -> Optional[str]:
+    if scheme is None:
+        id_scheme = idutils.detect_identifier_schemes(pid)
+        if not id_scheme:
+            return None
+        scheme = id_scheme[0]
+
+    pidx = idutils.to_url(pid, scheme)
     if pidx.lower().startswith("http:"):
-        pidx = pidx.lower().replace("http:", "https:")
+        pidx = "https:" + pidx[5:]
     return pidx
+
 
 def _normalize_identifier(identifier: str, scheme: str) -> str:
     normalizer = getattr(idutils, f"normalize_{scheme}", None)
@@ -162,7 +166,8 @@ def _to_actionable_iri(normalized: str, scheme: str) -> str:
         issn = _strip_any_prefix(normalized, "issn:", "urn:issn:")
         return f"urn:issn:{issn}"
     if scheme == "re3data":
-        r3d_id = _strip_any_prefix(normalized, "re3data:", "https://www.re3data.org/repository/", "http://www.re3data.org/repository/")
+        r3d_id = _strip_any_prefix(normalized, "re3data:", "https://www.re3data.org/repository/",
+                                   "http://www.re3data.org/repository/")
         return f"https://www.re3data.org/repository/{r3d_id}"
     if scheme in {"url", "urn"}:
         return normalized
@@ -182,8 +187,10 @@ def _quote_identifier_path(value: str) -> str:
 
 
 def main() -> None:
-
-    dc_identifiers = ["urn:uuid:b3391b53-23c2-473a-9d2e-72674f2b42bd" , "https://pangaea.de/" , "10.25504/FAIRsharing.6yw6cp" , "https://doi.org/10.1594/PANGAEA" , "https://www.pangaea.de/" , "r3d100010134" , "https://doi.org/10.17616/R3XS37" , "https://www.re3data.org/repository/r3d100010134"]
+    dc_identifiers = ["urn:uuid:b3391b53-23c2-473a-9d2e-72674f2b42bd", "0000 0003 1106 8441",
+                      "ark:/12148/btv1b8449691v", "https://pangaea.de/", "10.25504/FAIRsharing.6yw6cp", "SAMN12345678",
+                      "https://doi.org/10.1594/PANGAEA", "https://www.pangaea.de/", "r3d100010134",
+                      "https://doi.org/10.17616/R3XS37", "https://www.re3data.org/repository/r3d100010134"]
     pidset = set()
     for dc_id in dc_identifiers:
         try:
