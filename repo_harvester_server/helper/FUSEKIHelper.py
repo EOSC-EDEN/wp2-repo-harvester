@@ -1,11 +1,15 @@
+import json
 import os
 
+import jmespath
 import requests
 from requests.auth import HTTPBasicAuth
 
 from repo_harvester_server.config import FUSEKI_PATH
+from repo_harvester_server.helper.JMESPATHQueries import DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.SPARQLQueries import GET_ALL_GRAPHS
 from SPARQLWrapper import SPARQLWrapper, JSON
+from rdflib import Graph
 
 import logging
 
@@ -13,6 +17,9 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
+# The context the harvester writes its graphs with, and reads them back with.
+EXPORT_CONTEXT = jmespath.search(DCAT_EXPORT_QUERY, {})['@context']
+
 # some methods to check and clean the FUSEKI store
 
 class FusekiAuthError(Exception):
@@ -95,10 +102,14 @@ class FUSEKIHelper:
 
             for g_uri in graph_uris:
                 params = {"graph": g_uri}
-                headers = {"Accept": "application/ld+json"}
+                headers = {"Accept": "application/n-triples"}
                 auth = (self.FUSEKI_USERNAME, self.FUSEKI_PASSWORD)
                 r = requests.get(str(FUSEKI_PATH), params=params, headers=headers, auth=auth)
-                all_graphs[g_uri]= r.json()
+                # FUSEKI compacts JSON-LD with the dataset's prefixes, and every PUT that replaces a graph
+                # resets them to the prefixes of the uploaded document, so the graph is compacted here.
+                # The N-Triples are parsed as bytes: they are UTF-8, but FUSEKI sends them without a charset.
+                graph = Graph().parse(data=r.content, format='nt')
+                all_graphs[g_uri] = json.loads(graph.serialize(format='json-ld', context=EXPORT_CONTEXT))
         except Exception as e:
             self.logger.error('FUSEKI (while trying to SPARQL) Error: '+str(e))
 
