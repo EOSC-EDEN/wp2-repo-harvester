@@ -108,6 +108,8 @@ class RepositoryHarvester:
         self.registry_cache = registry_cache
         self.catalog_html = None
         self.metadata = []
+        # What each source returned, by source, kept apart from the extracted metadata.
+        self.raw_payloads = {}
         self.dcats = []
         self.metadata_helper = None
         self.catalog_ids = [self.catalog_url]
@@ -259,6 +261,9 @@ class RepositoryHarvester:
                 return obj
 
 
+        if new_metadata and '_raw' in new_metadata:
+            self.raw_payloads.setdefault(source, []).append(new_metadata['_raw'])
+            new_metadata = {k: v for k, v in new_metadata.items() if k != '_raw'}
         if new_metadata:
             new_metadata = clean_none(new_metadata)
             if not new_metadata.get('identifier'):

@@ -106,9 +106,14 @@ class MetadataHelper:
             metadata = json.loads(str(result))
         except Exception as e:
             self.logger.error("Error parsing meta tags metadata: %s", e)'''
+        raw = {}
         try:
             self.logger.info('Trying to parse meta tags metadata')
             doc = lxml_html.fromstring(self.catalog_html)
+            for meta in doc.xpath('//meta[@content]'):
+                name = meta.get('name') or meta.get('property')
+                if name:
+                    raw.setdefault(name, []).append(meta.get('content'))
             desc = doc.xpath('//meta[@name="description"]/@content')
             if desc: metadata['description'] = desc[0].strip()
             pub = doc.xpath('//meta[@name="publisher"]/@content')
@@ -133,6 +138,8 @@ class MetadataHelper:
                 metadata['resource_type'] = 'dcmitype:Text'
             else:
                 metadata['resource_type'] = ['dcmitype:Text', str(metadata['resource_type'])]
+        if raw:
+            metadata['_raw'] = raw
         return metadata
 
     def _extract_publisher(self, g, resource_node):
@@ -306,6 +313,7 @@ class MetadataHelper:
 
     def get_embedded_jsonld_metadata(self,  mode = 'rdflib'):
         metadata = {}
+        raw = None
         self.logger.info('Trying to identify embedded JSONLD metadata')
         if not isinstance(self.catalog_html, bytes): return metadata
         try:
@@ -331,12 +339,12 @@ class MetadataHelper:
             if len(script_content) == 1:
                 script_content = script_content[0]
 
-            script_content = json.dumps(script_content)
             if script_content:
+                raw = json.dumps(script_content)
                 if mode == 'rdflib':
-                    extracted = self.get_jsonld_metadata(script_content)
+                    extracted = self.get_jsonld_metadata(raw)
                 else:
-                    extracted = self.get_jsonld_metadata_simple(script_content)
+                    extracted = self.get_jsonld_metadata_simple(raw)
 
                 metadata.update(extracted)
         except Exception as e:
@@ -345,11 +353,14 @@ class MetadataHelper:
             self.logger.warning("No embedded JSONLD metadata found")
         else:
             self.logger.info("SUCCESS: Found embedded JSONLD metadata")
+        if raw:
+            metadata['_raw'] = raw
         return metadata
     
     def get_linked_jsonld_metadata(self, typed_link, mode = 'rdflib'):
         self.logger.info('Trying to retrieve linked (signposting) jsonld metadata from ' + typed_link)
         metadata = {}
+        ljson_str = None
         if 'http' in str(typed_link):
             try:
                 resp = self.session.get(typed_link, timeout=10)
@@ -368,6 +379,8 @@ class MetadataHelper:
                 pass
         if metadata:
             self.logger.info('SUCCESS: Found linked (signposting) jsonld metadata')
+        if ljson_str:
+            metadata['_raw'] = ljson_str
         return metadata
 
     def get_sitemap_service_metadata(self):
@@ -476,6 +489,8 @@ class MetadataHelper:
             self.signposting_helper.logger.info('SUCCESS: Found fairicat service metadata')
             metadata['services'] = list(grouped_services.values())
             metadata['services'].extend(services)
+        if self.signposting_helper.linkset_documents:
+            metadata['_raw'] = {'linksets': self.signposting_helper.linkset_documents}
         return metadata
 
     #@classmethod

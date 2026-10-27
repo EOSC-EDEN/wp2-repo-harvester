@@ -181,6 +181,7 @@ class CoreTrustSealHarvester(object):
                 'expires': r.get('validUntil'),
                 'active': _still_valid(r.get('validUntil')),
             }) for r in group) if c],
+            '_raw': {'certificates': group},
         }
         if institution.get('name'):
             # country under the publisher: the export reads it from there only

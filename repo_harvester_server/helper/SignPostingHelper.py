@@ -29,6 +29,8 @@ class SignPostingHelper:
             self.html = html
             self.headers = headers
             self.links = []
+            # Every fetched JSON linkset, whole, for the raw FAIRiCat graph.
+            self.linkset_documents = []
             self.set_links()
 
     def get_linksets(self):
@@ -45,6 +47,7 @@ class SignPostingHelper:
             if linksetlink.get('type') == 'application/linkset+json':
                 response = self.session.get(linksetlink.get('link'))
                 link_dict = response.json()
+                self.linkset_documents.append(link_dict)
                 if isinstance(link_dict.get('linkset'), list):
                     for linkset in link_dict.get('linkset'):
                         if isinstance(linkset, dict):

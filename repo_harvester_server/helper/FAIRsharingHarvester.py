@@ -392,7 +392,7 @@ class FAIRsharingHarvester:
             'landingPage': metadata_nested.get('homepage'),
             'identifier': [metadata_nested.get('doi')] if metadata_nested.get('doi') else None
         }'''
-        
+        metadata['_raw'] = best_record
         return {k: v for k, v in metadata.items() if v}
 
     def _choose_record(self, matching_records, catalog_url=None):

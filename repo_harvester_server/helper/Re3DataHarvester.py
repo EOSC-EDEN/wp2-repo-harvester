@@ -561,6 +561,9 @@ class Re3DataHarvester:
             clean_keywords.append(re.sub(r'^([0-9]+\s)', '', kw, flags=re.M))
         keywords = clean_keywords
 
+        # The repository element without the API's r3d:re3data wrapper: the KB's re3data patterns start at it.
+        repository = repo_root.xpath('descendant-or-self::r3d:repository', namespaces=self.ns)
+
         metadata = {
             'resource_type' : 'r3d:Repository',# see: https://github.com/re3data/ontology/blob/master/r3dOntology.ttl
             'title': find_text(repo_root, ".//r3d:repositoryName"),
@@ -575,5 +578,6 @@ class Re3DataHarvester:
             'subject': keywords if keywords else None,
             'license': find_text(repo_root, ".//r3d:dataLicense/r3d:dataLicenseUrl") or find_text(repo_root, ".//r3d:dataLicense/r3d:dataLicenseName"),
             'certificates': [c for c in certificates if c],
+            '_raw': etree.tostring(repository[0], encoding='unicode') if repository else None,
         }
         return {k: v for k, v in metadata.items() if v}
