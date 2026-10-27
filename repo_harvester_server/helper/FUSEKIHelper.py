@@ -91,6 +91,7 @@ class FUSEKIHelper:
               GRAPH ?g {{ ?s ?p ?o }}
               FILTER(CONTAINS(STR(?g), "{repouri}"))
               FILTER(!CONTAINS(STR(?g), "eden://harvester/harmonized/"))
+              FILTER(!STRSTARTS(STR(?g), "eden://harvester/raw/"))
             }}
             """)
         sparql.setReturnFormat(JSON)

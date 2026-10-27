@@ -4,6 +4,7 @@ Each graph marks its main node, the repository, with
 <graph IRI> foaf:primaryTopic <main node>.
 """
 import json
+import logging
 import re
 from urllib.parse import quote
 
@@ -11,6 +12,8 @@ from lxml import etree
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import FOAF, RDF, SDO
 from rdflib.term import Node
+
+logger = logging.getLogger('RawGraph')
 
 RAW_GRAPH_PREFIX = 'eden://harvester/raw/'
 NAMESPACES = {
@@ -158,4 +161,22 @@ def meta_to_graph(tags: dict[str, list[str]], graph_iri: str) -> Graph:
     for name, values in tags.items():
         for value in values:
             g.add((main, URIRef(NAMESPACES['meta_tags'] + quote(name, safe='')), Literal(value)))
+    return g
+
+
+def raw_graph(source: str, payloads: list, graph_iri: str) -> Graph:
+    """One source's payloads as one graph; a payload that cannot be converted is skipped with a warning."""
+    g = Graph()
+    for payload in payloads:
+        try:
+            if source in ('embedded_jsonld', 'linked_jsonld'):
+                g += jsonld_to_graph(payload, graph_iri)
+            elif source == 're3data':
+                g += xml_to_graph(payload, graph_iri)
+            elif source == 'meta_tags':
+                g += meta_to_graph(payload, graph_iri)
+            else:
+                g += json_to_graph(payload, NAMESPACES[source], graph_iri)
+        except Exception as e:
+            logger.warning('Skipping a %s payload that cannot be converted: %s', source, e)
     return g

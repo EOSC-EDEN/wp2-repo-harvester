@@ -26,6 +26,7 @@ from repo_harvester_server.helper.RegistryCache import (
 )
 from repo_harvester_server.helper.RegistryHTTP import RegistryUnavailableError
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
+from repo_harvester_server.helper.RawGraph import RAW_GRAPH_PREFIX, raw_graph
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 # A legitimate landing page does not publish dozens of 'describedby' links.
@@ -602,5 +603,17 @@ class RepositoryHarvester:
             else:
                  self.logger.info(f"Skipping export for source '{source}': No meaningful data to map.")
 
+        if save:
+            self.save_raw_graphs(self.raw_payloads)
         self.logger.info("--- Finished Export ---")
         return final_records
+
+    def save_raw_graphs(self, payloads_by_source):
+        """Save each source's payloads as its raw graph and return the IRIs of the graphs saved."""
+        saved = []
+        for source, payloads in payloads_by_source.items():
+            graph_iri = f'{RAW_GRAPH_PREFIX}{source}/{self.catalog_url}'
+            g = raw_graph(source, payloads, graph_iri)
+            if len(g) and self.fuseki.save(graph_iri, g.serialize(format='json-ld')) is not None:
+                saved.append(graph_iri)
+        return saved
