@@ -62,6 +62,8 @@ python harvest_all.py --filter dans --limit 3
 - Individual JSON files: `output/<RepoName>.json`
 - Summary: `output/_harvest_summary.json`
 
+To harmonise every harvested repository again from the graphs in Fuseki without harvesting, for example after the KB's source patterns change, run `python harmonize_all.py`.
+
 ## Configuration
 
 | File                                                 | Purpose                      |
