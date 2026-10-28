@@ -11,6 +11,7 @@ import requests
 
 
 from repo_harvester_server.config import FUSEKI_PATH
+from repo_harvester_server.helper.AttributeMapper import apply_kb_attributes
 from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 from repo_harvester_server.helper.JMESPATHQueries import DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
@@ -208,6 +209,7 @@ class RepositoryHarmonizer:
             merged_catalog_dcat["prov:wasGeneratedBy"]["prov:startedAtTime"] = started
         merged_uri = f"eden://harvester/harmonized/"+str(self.repouri)
         merged_catalog_dcat["@id"] = merged_uri
+        merged_catalog_dcat = apply_kb_attributes(merged_catalog_dcat, self.repouri, self.fuseki)
 
         # save harmonized record in FUSEKI
         saved_triples = self.fuseki.save(merged_uri, json.dumps(merged_catalog_dcat))

@@ -9,7 +9,8 @@ from repo_harvester_server.config import FUSEKI_PATH
 from repo_harvester_server.helper.JMESPATHQueries import DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.SPARQLQueries import GET_ALL_GRAPHS
 from SPARQLWrapper import SPARQLWrapper, JSON
-from rdflib import Graph
+from rdflib import Graph, Literal
+from repo_harvester_server.helper.RawGraph import RAW_GRAPH_PREFIX
 
 import logging
 
@@ -115,6 +116,52 @@ class FUSEKIHelper:
             self.logger.error('FUSEKI (while trying to SPARQL) Error: '+str(e))
 
         return all_graphs
+
+    def _select(self, query):
+        """The result rows of a SELECT query."""
+        sparql = SPARQLWrapper(str(FUSEKI_PATH).replace('/data', '/sparql'))
+        if self.FUSEKI_USERNAME and self.FUSEKI_PASSWORD:
+            sparql.setCredentials(self.FUSEKI_USERNAME, self.FUSEKI_PASSWORD)
+        sparql.setQuery(query)
+        sparql.setReturnFormat(JSON)
+        return sparql.query().convert()["results"]["bindings"]
+
+    def get_source_patterns(self):
+        """The KB's source patterns as (attribute IRI, pattern) pairs, or [] when they cannot be read."""
+        try:
+            rows = self._select("""
+                PREFIX edenkb: <https://w3id.org/eosc-eden/kb#>
+                SELECT ?attribute ?pattern
+                WHERE { GRAPH <eden://kb/definitions> { ?attribute edenkb:sourcePattern ?pattern } }
+                ORDER BY ?attribute ?pattern
+                """)
+        except Exception as e:
+            self.logger.warning('KB source patterns could not be read: %s', e)
+            return []
+        return [(r['attribute']['value'], r['pattern']['value']) for r in rows]
+
+    def get_raw_graphs(self, repouri):
+        """The repository's raw source graphs, or [] when they cannot be read."""
+        query = f"""
+            SELECT DISTINCT ?g
+            WHERE {{
+              GRAPH ?g {{ ?s ?p ?o }}
+              FILTER(STRSTARTS(STR(?g), "{RAW_GRAPH_PREFIX}") && STRENDS(STR(?g), {Literal('/' + str(repouri)).n3()}))
+            }}
+            """
+        try:
+            graphs = []
+            for row in self._select(query):
+                r = requests.get(str(FUSEKI_PATH), params={"graph": row['g']['value']},
+                                 headers={"Accept": "application/n-triples"},
+                                 auth=(self.FUSEKI_USERNAME, self.FUSEKI_PASSWORD))
+                r.raise_for_status()
+                # The N-Triples are parsed as bytes: they are UTF-8, but FUSEKI sends them without a charset.
+                graphs.append(Graph().parse(data=r.content, format='nt'))
+            return graphs
+        except Exception as e:
+            self.logger.warning('Raw graphs of %s could not be read: %s', repouri, e)
+            return []
 
     def get_all_graphids(self):
         sparql = SPARQLWrapper(str(FUSEKI_PATH).replace('/data', '/query'))
