@@ -163,6 +163,25 @@ class FUSEKIHelper:
             self.logger.warning('Raw graphs of %s could not be read: %s', repouri, e)
             return []
 
+    def get_snapshot_values(self, repouri):
+        """The repository's attribute values in the KB snapshots as (graph, attribute, value),
+        or [] when they cannot be read. The repository IRI matches without case, anchor or trailing slashes."""
+        repository = Literal(str(repouri).split('#')[0].strip().rstrip('/').lower()).n3()
+        query = f"""
+            SELECT ?g ?attribute ?value
+            WHERE {{
+              GRAPH ?g {{ ?repository ?attribute ?value }}
+              FILTER(STRSTARTS(STR(?g), "eden://kb/snapshots/"))
+              FILTER(STRSTARTS(STR(?attribute), "https://w3id.org/trsp/att."))
+              FILTER(LCASE(REPLACE(REPLACE(STR(?repository), "#.*$", ""), "/+$", "")) = {repository})
+            }}
+            """
+        try:
+            return [(r['g']['value'], r['attribute']['value'], r['value']['value']) for r in self._select(query)]
+        except Exception as e:
+            self.logger.warning('KB snapshot values of %s could not be read: %s', repouri, e)
+            return []
+
     def get_all_graphids(self):
         sparql = SPARQLWrapper(str(FUSEKI_PATH).replace('/data', '/query'))
         sparql.setCredentials(self.FUSEKI_USERNAME, self.FUSEKI_PASSWORD)

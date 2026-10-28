@@ -90,3 +90,44 @@ def test_raw_graphs_read_n_triples_as_utf8():
         [graph] = FUSEKIHelper().get_raw_graphs(str(REPO))
     assert (REPO, DCTERMS.title, Literal("Hava ölçümü")) in graph
 
+
+SNAPSHOT = "eden://kb/snapshots/fidelis-sheet"
+HARVESTED = "eden://harvester/re3data/https://example.org/"
+ATT_B = "https://w3id.org/trsp/att.B"
+TITLE_PATTERN = (ATT, "?repository dct:title ?value")
+
+
+def _harmonised_record():
+    return {"@context": {"dct": "http://purl.org/dc/terms/", "foaf": "http://xmlns.com/foaf/0.1/",
+                         "prov": "http://www.w3.org/ns/prov#"},
+            "foaf:primaryTopic": {"@id": str(REPO), "dct:title": "X", "prov:hadPrimarySource": [HARVESTED]}}
+
+
+def _fuseki(snapshot):
+    fuseki = mock.Mock()
+    fuseki.get_source_patterns.return_value = [TITLE_PATTERN]
+    fuseki.get_raw_graphs.return_value = []
+    fuseki.get_snapshot_values.return_value = snapshot
+    return fuseki
+
+
+def test_snapshot_values_fill_attributes_the_harvest_left_empty():
+    fuseki = _fuseki([(SNAPSHOT, ATT, "From the sheet"), (SNAPSHOT, ATT_B, "Sheet 1"), (SNAPSHOT, ATT_B, "Sheet 2")])
+    topic = apply_kb_attributes(_harmonised_record(), str(REPO), fuseki)["foaf:primaryTopic"]
+    assert topic[ATT] == ["X"]
+    assert topic[ATT_B] == ["Sheet 1", "Sheet 2"]
+
+
+def test_snapshot_graph_is_recorded_as_a_source():
+    used = apply_kb_attributes(_harmonised_record(), str(REPO), _fuseki([(SNAPSHOT, ATT_B, "Sheet")]))
+    unused = apply_kb_attributes(_harmonised_record(), str(REPO), _fuseki([(SNAPSHOT, ATT, "Sheet")]))
+    assert used["foaf:primaryTopic"]["prov:hadPrimarySource"] == [HARVESTED, SNAPSHOT]
+    assert unused["foaf:primaryTopic"]["prov:hadPrimarySource"] == [HARVESTED]
+
+
+def test_snapshot_query_matches_the_repository_without_case_anchor_or_trailing_slash():
+    with mock.patch.object(fuseki_module, "SPARQLWrapper") as wrapper:
+        FUSEKIHelper().get_snapshot_values("https://Example.org/portal/#overview")
+    query = wrapper.return_value.setQuery.call_args.args[0]
+    assert 'STRSTARTS(STR(?g), "eden://kb/snapshots/")' in query
+    assert 'LCASE(REPLACE(REPLACE(STR(?repository), "#.*$", ""), "/+$", "")) = "https://example.org/portal"' in query

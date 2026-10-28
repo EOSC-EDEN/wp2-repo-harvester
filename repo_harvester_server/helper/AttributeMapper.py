@@ -3,7 +3,8 @@
 A source pattern is a SPARQL group graph pattern that binds ?value for the
 repository ?repository. It runs on the harmonised record, with ?repository
 bound to the repository, and on every raw source graph, with ?repository bound
-to the graph's foaf:primaryTopic.
+to the graph's foaf:primaryTopic. Values the KB records in a snapshot, such as
+the FIDELIS secretariat sheet, fill the attributes no pattern found a value for.
 """
 import json
 import logging
@@ -79,4 +80,14 @@ def apply_kb_attributes(dcat: dict, repository: str, fuseki) -> dict:
         return dcat
     merged = Graph().parse(data=json.dumps(dcat), format='json-ld')
     values = map_attributes(merged, URIRef(repository), fuseki.get_raw_graphs(repository), patterns)
-    return add_attribute_values(dcat, values)
+    snapshot, sources = {}, []
+    for graph, attribute, value in fuseki.get_snapshot_values(repository):
+        if attribute not in values:
+            snapshot.setdefault(attribute, []).append(value)
+            if graph not in sources:
+                sources.append(graph)
+    dcat = add_attribute_values(dcat, {**values, **snapshot})
+    if sources:
+        topic = dcat['foaf:primaryTopic']
+        topic['prov:hadPrimarySource'] = [*topic.get('prov:hadPrimarySource', []), *sources]
+    return dcat
