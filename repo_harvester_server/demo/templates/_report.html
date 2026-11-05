@@ -106,7 +106,8 @@
 <p class="note">
   Harvested from <code>{{ report.canonical_url }}</code>
   {%- if report.canonical_url != report.submitted_url %},
-  which <code>{{ report.submitted_url }}</code> redirects to{% endif %}.
+  which <code>{{ report.submitted_url }}</code> redirects to{% endif %}
+  {%- if report.page_fetched and report.harvested_at %}, on {{ report.harvested_at }}{% endif %}.
 </p>
 
 {% if not report.page_fetched %}
@@ -204,7 +205,8 @@
 <p class="note">{{ registry.display_name }} knows about these endpoints. Whether your landing page
 also points to them is a separate question &mdash; the table at the top answers that one.</p>
 {% endif %}
-<p class="note">Source: {{ registry.label }}. Shown separately &mdash; nothing on this
+<p class="note">Source: {{ registry.label }}{% if registry.harvested_at %}, harvested
+{{ registry.harvested_at }}{% endif %}. Shown separately &mdash; nothing on this
 page merges sources. This table is a subset of the full record below.</p>
 <details>
   <summary>Full {{ registry.display_name }} record (JSON)</summary>

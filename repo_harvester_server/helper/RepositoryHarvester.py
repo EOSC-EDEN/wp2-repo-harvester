@@ -1,6 +1,5 @@
 import json
 import os
-from datetime import datetime
 import requests
 from requests.auth import HTTPBasicAuth
 import logging
@@ -9,6 +8,7 @@ from rdflib import Graph
 
 from repo_harvester_server import config
 from repo_harvester_server.helper.HarvestSession import build_session
+from repo_harvester_server.helper.HarvestTime import datetime_literal, harvest_timestamp
 from repo_harvester_server.helper.RepositoryHarmonizer import RepositoryHarmonizer
 
 logging.basicConfig(
@@ -177,6 +177,7 @@ class RepositoryHarvester:
         if not str(self.catalog_url).startswith('http'):
             self.logger.error("Invalid repo URI: %s", self.catalog_url)
 
+        self.harvested_at = harvest_timestamp()
         try:
             response = self.session.get(self.catalog_url, timeout=10)
             response.raise_for_status()
@@ -233,7 +234,7 @@ class RepositoryHarvester:
         return all_variables_available
 
 
-    def merge_metadata(self, new_metadata, source = None):
+    def merge_metadata(self, new_metadata, source = None, harvested_at=None):
         """
         Merges (rather adds) new metadata into a list of metadata objects.
         Merging should later be done using the individual metadata /service graphs
@@ -264,7 +265,8 @@ class RepositoryHarvester:
             if not new_metadata.get('identifier'):
                 if self.catalog_url:
                     new_metadata['identifier'] = self.catalog_url
-            self.metadata.append({'source': source, 'metadata': new_metadata})
+            self.metadata.append({'source': source, 'metadata': new_metadata,
+                                  'harvested_at': harvested_at or self.harvested_at})
 
     def harvest(self, where=None):
         """
@@ -386,9 +388,10 @@ class RepositoryHarvester:
             if registry not in self.degraded_sources:
                 self.degraded_sources.append(registry)
 
-        self.merge_metadata(result.re3data, 're3data')
-        self.merge_metadata(result.fairsharing, 'fairsharing')
-        self.merge_metadata(result.coretrustseal, 'coretrustseal')
+        registries_harvested_at = result.harvested_at or harvest_timestamp()
+        self.merge_metadata(result.re3data, 're3data', registries_harvested_at)
+        self.merge_metadata(result.fairsharing, 'fairsharing', registries_harvested_at)
+        self.merge_metadata(result.coretrustseal, 'coretrustseal', registries_harvested_at)
 
         self.logger.info("--- Finished Registry Harvesting ---")
 
@@ -397,6 +400,7 @@ class RepositoryHarvester:
 
         :rtype: RegistryResult
         """
+        harvested_at = harvest_timestamp()
         re3data_harvester = None
         if 're3data' in self.enabled_registries:
             re3data_harvester = self.re3data_harvester or Re3DataHarvester()
@@ -466,7 +470,8 @@ class RepositoryHarvester:
             )
 
         return RegistryResult(re3data_meta, fairsharing_meta,
-                              list(self.degraded_sources), coretrustseal_meta)
+                              list(self.degraded_sources), coretrustseal_meta,
+                              harvested_at)
 
     def harmonize(self):
         h = RepositoryHarmonizer(self.catalog_url, run_id=self.run_id)
@@ -565,15 +570,14 @@ class RepositoryHarvester:
             primary_topic = export_record.get('foaf:primaryTopic')
             #this would ignore feed metadata etc which have no repo info per se
             if primary_topic:
-                now = datetime.now()
-                date_time = now.strftime("%Y-%m-%dT%H:%M:%S")
+                harvested_at = m.get('harvested_at') or self.harvested_at
                 graph_id = f'eden://harvester/{source}/{self.catalog_url}'
 
                 export_record['@id'] = graph_id
-                export_record['dct:issued'] = date_time
+                export_record['dct:issued'] = datetime_literal(harvested_at)
 
                 if 'prov:wasGeneratedBy' in export_record:
-                    export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = date_time
+                    export_record['prov:wasGeneratedBy']['prov:startedAtTime'] = datetime_literal(harvested_at)
                     export_record['prov:wasGeneratedBy']['rdfs:label'] = self.extractors.get(source, "Unknown Harvester")
                     export_record['prov:wasGeneratedBy']['@id'] = f'eden://harvester/{source}'
 
