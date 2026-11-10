@@ -3,7 +3,6 @@ import json
 import logging
 import os
 from collections import Counter
-from datetime import datetime
 from functools import lru_cache
 
 import jmespath
@@ -15,6 +14,7 @@ from repo_harvester_server.helper.FUSEKIHelper import FUSEKIHelper
 from repo_harvester_server.helper.JMESPATHQueries import DCAT_EXPORT_QUERY
 from repo_harvester_server.helper.MetadataHelper import MetadataHelper
 from repo_harvester_server.helper.GraphHelper import JSONGraph
+from repo_harvester_server.helper.HarvestTime import datetime_literal, harvest_timestamp
 from repo_harvester_server.helper.ServiceInfoHelper import ServiceInfoHelper
 
 import logging
@@ -133,7 +133,7 @@ class RepositoryHarmonizer:
 
 
 
-        started = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        started = harvest_timestamp()
         combined = {}
         basic_props = ['title', 'description', 'publisher', 'contact']
 
@@ -202,10 +202,10 @@ class RepositoryHarmonizer:
 
         # Every value here is as of this harmonization; without the date nobody
         # reading the graph can tell how old, say, a certification status is.
-        merged_catalog_dcat["dct:issued"] = started
+        merged_catalog_dcat["dct:issued"] = datetime_literal(started)
         if merged_catalog_dcat.get("prov:wasGeneratedBy"):
             merged_catalog_dcat["prov:wasGeneratedBy"]["rdfs:label"] = 'Metadata harmonizing activity'
-            merged_catalog_dcat["prov:wasGeneratedBy"]["prov:startedAtTime"] = started
+            merged_catalog_dcat["prov:wasGeneratedBy"]["prov:startedAtTime"] = datetime_literal(started)
         merged_uri = f"eden://harvester/harmonized/"+str(self.repouri)
         merged_catalog_dcat["@id"] = merged_uri
 

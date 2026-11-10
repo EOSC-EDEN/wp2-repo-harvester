@@ -20,6 +20,7 @@ from repo_harvester_server import config
 from repo_harvester_server.demo.check_help import help_for
 from repo_harvester_server.helper.CoreTrustSealHarvester import CoreTrustSealHarvester
 from repo_harvester_server.helper.FAIRsharingHarvester import FAIRsharingHarvester
+from repo_harvester_server.helper.HarvestTime import display_timestamp
 from repo_harvester_server.helper.RegistryCache import RegistryCache
 from repo_harvester_server.helper.RegistryHTTP import RegistryUnavailableError
 from repo_harvester_server.helper.RepositoryHarvester import RepositoryHarvester
@@ -338,6 +339,7 @@ def _registry_rows(harvester, found_sources, records, services):
             'label': harvester.extractors.get(name, name),
             'status': status,
             'record': record,
+            'harvested_at': display_timestamp(record.get('dct:issued')) if record else None,
             'services': [s for source, s in services if source == name],
         })
     return rows
@@ -361,6 +363,7 @@ def build_report(harvester, submitted_url, records):
         'submitted_url': submitted_url,
         'canonical_url': harvester.catalog_url,
         'page_fetched': harvester.metadata_helper is not None,
+        'harvested_at': display_timestamp(getattr(harvester, 'harvested_at', None)),
         'self_hosted': self_hosted,
         'registries': _registry_rows(harvester, found_sources, records, services),
         # What the landing page itself exposes, which is what the page reports
