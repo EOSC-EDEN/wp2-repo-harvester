@@ -58,6 +58,8 @@ def resolve_identifier(value: str, preferred_scheme: str | None = None) -> Ident
         scheme = _best_scheme(schemes)
 
     normalized = _normalize_identifier(identifier, scheme)
+    if scheme == "doi":
+        normalized = normalized.lower()
     iri = get_actionable_pid_url(normalized, scheme) or _to_actionable_iri(normalized, scheme)
     return IdentifierResolution(
         original=value,

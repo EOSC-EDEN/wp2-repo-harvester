@@ -8,12 +8,12 @@ from repo_harvester_server.id_to_iri import detect_re3data_identifier, resolve_i
 @pytest.mark.parametrize(
     "identifier,scheme,normalized,iri",
     [
-        ("10.1594/PANGAEA", "doi", "10.1594/PANGAEA", "https://doi.org/10.1594/PANGAEA"),
+        ("10.1594/PANGAEA", "doi", "10.1594/pangaea", "https://doi.org/10.1594/pangaea"),
         (
             "https://doi.org/10.1594/PANGAEA",
             "doi",
-            "10.1594/PANGAEA",
-            "https://doi.org/10.1594/PANGAEA",
+            "10.1594/pangaea",
+            "https://doi.org/10.1594/pangaea",
         ),
         (
             "https://hdl.handle.net/20.500.123/ABC",
@@ -86,8 +86,8 @@ def test_resolve_identifier_preserves_original():
 
     assert resolution.original == original
     assert resolution.scheme == "doi"
-    assert resolution.normalized == "10.1594/PANGAEA"
-    assert resolution.iri == "https://doi.org/10.1594/PANGAEA"
+    assert resolution.normalized == "10.1594/pangaea"
+    assert resolution.iri == "https://doi.org/10.1594/pangaea"
 
 
 def test_resolve_identifier_rejects_unknown_identifier():
