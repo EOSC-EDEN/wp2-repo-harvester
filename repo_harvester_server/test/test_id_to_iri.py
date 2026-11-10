@@ -38,7 +38,7 @@ from repo_harvester_server.id_to_iri import detect_re3data_identifier, resolve_i
             "http://example.org/CaseSensitive",
             "url",
             "http://example.org/CaseSensitive",
-            "https://example.org/CaseSensitive",
+            "http://example.org/CaseSensitive",
         ),
         (
             "urn:uuid:b3391b53-23c2-473a-9d2e-72674f2b42bd",

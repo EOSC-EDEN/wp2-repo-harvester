@@ -114,10 +114,7 @@ def get_actionable_pid_url(pid: str, scheme: str | None = None) -> Optional[str]
             return None
         scheme = id_scheme[0]
 
-    pidx = idutils.to_url(pid, scheme)
-    if pidx.lower().startswith("http:"):
-        pidx = "https:" + pidx[5:]
-    return pidx
+    return idutils.to_url(pid, scheme, url_scheme="https")
 
 
 def _normalize_identifier(identifier: str, scheme: str) -> str:
