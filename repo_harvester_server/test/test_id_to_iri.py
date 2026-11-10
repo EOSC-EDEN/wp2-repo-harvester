@@ -95,6 +95,19 @@ def test_resolve_identifier_rejects_unknown_identifier():
         resolve_identifier("custom-local-id-1234")
 
 
+@pytest.mark.parametrize("identifier", ["2020", "123456789"])
+def test_resolve_identifier_rejects_bare_numbers(identifier):
+    with pytest.raises(ValueError, match="Could not detect a supported identifier scheme"):
+        resolve_identifier(identifier)
+
+
+def test_resolve_identifier_accepts_explicit_pmid():
+    resolution = resolve_identifier("pmid:2020")
+
+    assert resolution.scheme == "pmid"
+    assert resolution.iri == "https://pubmed.ncbi.nlm.nih.gov/2020/"
+
+
 @pytest.mark.parametrize(
     "identifier",
     [

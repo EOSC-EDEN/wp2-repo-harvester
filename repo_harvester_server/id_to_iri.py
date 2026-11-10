@@ -28,6 +28,7 @@ SCHEME_PRIORITY = (
     "ark",
     "pmid",
     "pmcid",
+    "biosample",
     "arxiv",
     "isbn",
     "issn",
@@ -75,14 +76,13 @@ def _clean_identifier(value: str) -> str:
 
 def _detect_schemes(identifier: str) -> list[str]:
     schemes = [scheme.lower() for scheme in idutils.detect_identifier_schemes(identifier)]
+    if not identifier.lower().startswith("pmid:"):
+        schemes = [scheme for scheme in schemes if scheme != "pmid"]
     if not schemes:
         re3data_scheme = detect_re3data_identifier(identifier)
         if re3data_scheme:
             schemes.append(re3data_scheme)
-    supported_schemes = [
-        scheme for scheme in schemes
-        if scheme in SCHEME_PRIORITY or idutils.to_url(identifier, scheme)
-    ]
+    supported_schemes = [scheme for scheme in schemes if scheme in SCHEME_PRIORITY]
     if not supported_schemes:
         raise ValueError(f"Could not detect a supported identifier scheme for {identifier!r}.")
     return supported_schemes
