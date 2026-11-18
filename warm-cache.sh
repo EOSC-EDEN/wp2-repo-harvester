@@ -23,7 +23,7 @@ set -eu
 # harvester VM itself you can skip both the rate limit and TLS, using the
 # UVICORN_HOST and UVICORN_PORT from /etc/eden-harvester.env:
 #
-#     BASE_URL=http://192.168.0.x:8000 DELAY=0 sh warm-cache.sh
+#     BASE_URL=http://192.168.0.81:8000 DELAY=0 sh warm-cache.sh
 #
 # Either way it reaches the same process, so it warms the same cache the public
 # is served from.
