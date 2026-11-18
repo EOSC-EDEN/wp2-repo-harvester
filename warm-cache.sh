@@ -20,9 +20,10 @@ set -eu
 #
 # The default goes through nginx, which rate-limits per client IP (10r/m with a
 # burst of 5 - see deploy/eden-harvester.nginx.conf), hence DELAY below. On the
-# VM itself you can skip both the rate limit and TLS:
+# harvester VM itself you can skip both the rate limit and TLS, using the
+# UVICORN_HOST and UVICORN_PORT from /etc/eden-harvester.env:
 #
-#     BASE_URL=http://127.0.0.1:8080 DELAY=0 sh warm-cache.sh
+#     BASE_URL=http://192.168.0.x:8000 DELAY=0 sh warm-cache.sh
 #
 # Either way it reaches the same process, so it warms the same cache the public
 # is served from.
@@ -30,7 +31,7 @@ BASE_URL="${BASE_URL:-https://eden-harvester.vm.fedcloud.eu}"
 
 # Seconds between requests. nginx allows 10 a minute per IP, i.e. one every six
 # seconds once the burst of 5 is spent, so anything below ~6 earns a 503 on the
-# later URLs. Set DELAY=0 when talking to 127.0.0.1 directly.
+# later URLs. Set DELAY=0 when talking to the harvester VM directly.
 DELAY="${DELAY:-7}"
 
 # Workshop participant repositories. The name is only used in the output.

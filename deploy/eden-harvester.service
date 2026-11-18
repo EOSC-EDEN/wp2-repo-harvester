@@ -9,7 +9,10 @@ User=harvester
 Group=harvester
 WorkingDirectory=/opt/eden-harvester
 EnvironmentFile=/etc/eden-harvester.env
-ExecStart=/opt/eden-harvester/venv/bin/uvicorn repo_harvester_server.app:app --host 127.0.0.1 --port 8080
+# Address, port and trusted proxy come from UVICORN_HOST, UVICORN_PORT and
+# UVICORN_FORWARDED_ALLOW_IPS in the environment file. Flags here would override
+# them. With UVICORN_HOST unset uvicorn binds loopback, where the entry VM gets a 502.
+ExecStart=/opt/eden-harvester/venv/bin/uvicorn repo_harvester_server.app:app
 Restart=always
 RestartSec=5
 

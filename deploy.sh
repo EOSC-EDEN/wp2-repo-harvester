@@ -1,8 +1,15 @@
 #!/bin/sh
-# Deploy the harvester on the EU Node VM. Run as root on the VM itself.
+# Deploy the harvester on its service VM. Run as root on the VM itself.
 set -eu
 
 APP_DIR=/opt/eden-harvester
+
+# The address uvicorn listens on, taken from the file it reads it from. Not
+# sourced: that file also holds credentials, and systemd parses it differently
+# from sh. The fallbacks are uvicorn's own defaults.
+ENV_FILE=/etc/eden-harvester.env
+HOST=$(sed -n 's/^UVICORN_HOST=//p' "$ENV_FILE")
+PORT=$(sed -n 's/^UVICORN_PORT=//p' "$ENV_FILE")
 
 # The checkout is owned by the harvester user (see the runbook's chown step),
 # and this script runs as root - git refuses to operate on a repository owned
@@ -25,7 +32,7 @@ systemctl restart eden-harvester
 wait_for_healthz() {
     i=0
     while [ "$i" -lt 20 ]; do
-        if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+        if curl -fsS "http://${HOST:-127.0.0.1}:${PORT:-8000}/healthz" >/dev/null 2>&1; then
             return 0
         fi
         i=$((i + 1))
