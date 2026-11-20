@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSON-LD to HTML Viewer</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --badge-bg: #eff6ff;
+      --badge-text: #1d4ed8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      margin: 0;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 1.5rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    @media (max-width: 1080px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    textarea {
+      width: 100%;
+      height: 450px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      resize: vertical;
+      margin-bottom: 0.75rem;
+    }
+
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    button {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1.1rem;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--primary-hover); }
+
+    button.secondary {
+      background: #e2e8f0;
+      color: var(--text);
+    }
+
+    button.secondary:hover { background: #cbd5e1; }
+
+    .error {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+      padding: 0.75rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+
+    .entity-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      background: #fcfcfd;
+    }
+
+    .entity-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .type-badge {
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .prop-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .prop-table tr {
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .prop-table tr:last-child {
+      border-bottom: none;
+    }
+
+    .prop-key {
+      width: 170px;
+      vertical-align: top;
+      padding: 0.6rem 0.75rem 0.6rem 0;
+      font-weight: 600;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .prop-val {
+      vertical-align: top;
+      padding: 0.6rem 0;
+      font-size: 0.92rem;
+      word-break: break-word;
+    }
+
+    .multiline-text {
+      white-space: pre-line;
+      margin: 0;
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .tag {
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      font-size: 0.82rem;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>JSON-LD to HTML Viewer</h1>
+
+  <div class="layout">
+    <!-- Input Column -->
+    <div class="panel">
+      <label for="jsonInput" style="display:block; font-weight:600; margin-bottom:0.5rem;">
+        Paste JSON-LD (with or without &lt;script&gt; tags):
+      </label>
+      <textarea id="jsonInput" spellcheck="false"><script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DataCatalog",
+  "@id": "https://www.re3data.org/repository/r3d100000001",
+  "identifier": {
+    "@type": "PropertyValue",
+    "propertyID": "re3data",
+    "value": "r3d100000001",
+    "url": "https://www.re3data.org/repository/r3d100000001"
+  },
+  "name": "Odum Institute Archive Dataverse",
+  "url": "https://dataverse.unc.edu/dataverse/odum",
+  "description": "The Odum Institute Archive Dataverse contains social science data curated and archived by the Odum Institute Data Archive at the University of North Carolina at Chapel Hill. Some key collections include the primary holdings of the Louis Harris Data Center, the National Network of State Polls, and other Southern-focused public opinion data.\nPlease note that some datasets in this collection are restricted to University of North Carolina at Chapel Hill affiliates. Access to these datasets require UNC ONYEN institutional login to the Dataverse system.",
+  "datePublished": "2013-06-10",
+  "dateModified": "2026-01-14",
+  "inLanguage": "en",
+  "about": [
+    {
+      "@type": "DefinedTerm",
+      "name": "1 Humanities and Social Sciences",
+      "inDefinedTermSet": "DFG"
+    },
+    {
+      "@type": "DefinedTerm",
+      "name": "111 Social Sciences",
+      "inDefinedTermSet": "DFG"
+    },
+    {
+      "@type": "DefinedTerm",
+      "name": "11104 Political Science",
+      "inDefinedTermSet": "DFG"
+    },
+    {
+      "@type": "DefinedTerm",
+      "name": "112 Economics",
+      "inDefinedTermSet": "DFG"
+    },
+    {
+      "@type": "DefinedTerm",
+      "name": "12 Social and Behavioural Sciences",
+      "inDefinedTermSet": "DFG"
+    }
+  ],
+  "keywords": [
+    "FAIR",
+    "Middle East",
+    "crime",
+    "demography",
+    "economy",
+    "education",
+    "election",
+    "environment",
+    "finance",
+    "health care",
+    "presidents United States",
+    "taxes"
+  ],
+  "encodingFormat": [
+    "Databases",
+    "Plain text",
+    "Scientific and statistical data formats",
+    "Standard office documents",
+    "other"
+  ],
+  "license": "https://creativecommons.org/share-your-work/public-domain/cc0",
+  "isAccessibleForFree": true,
+  "conditionsOfAccess": "database:open, data:embargoed, data:open, data:restricted",
+  "publishingPrinciples": [
+    {
+      "@type": "CreativeWork",
+      "name": "Mission Statement",
+      "url": "https://odum.unc.edu/archive/"
+    },
+    {
+      "@type": "CreativeWork",
+      "name": "Collection Development Policy",
+      "url": "https://odum.unc.edu/wp-content/uploads/sites/1060/2020/01/Policy_CollectionDevelopment_20170501.pdf"
+    },
+    {
+      "@type": "CreativeWork",
+      "name": "Metadata Guidelines",
+      "url": "https://odum.unc.edu/wp-content/uploads/sites/1060/2020/01/Guidelines_Metadata_20170501.pdf"
+    }
+  ],
+  "provider": [
+    {
+      "@type": "Organization",
+      "name": "Odum Institute for Research in Social Science",
+      "url": "https://odum.unc.edu/archive/",
+      "address": {
+        "@type": "PostalAddress",
+        "addressCountry": "USA"
+      },
+      "additionalType": "general"
+    },
+    {
+      "@type": "Organization",
+      "name": "University of North Carolina at Chapel Hill",
+      "url": "https://www.unc.edu",
+      "address": {
+        "@type": "PostalAddress",
+        "addressCountry": "USA"
+      },
+      "identifier": "ROR:0130frc33",
+      "sameAs": "https://ror.org/0130frc33",
+      "additionalType": "general"
+    }
+  ],
+  "contactPoint": [
+    {
+      "@type": "ContactPoint",
+      "url": "https://uncch-rdmc.atlassian.net/servicedesk/customer/portal/4",
+      "contactType": "customer support"
+    },
+    {
+      "@type": "ContactPoint",
+      "email": "odumarchive@unc.edu",
+      "contactType": "customer support"
+    }
+  ],
+  "distribution": [
+    {
+      "@type": "DataDownload",
+      "name": "OAI-PMH Endpoint",
+      "encodingFormat": "OAI-PMH",
+      "contentUrl": "https://dataverse.unc.edu/oai?verb=Identify"
+    }
+  ],
+  "additionalProperty": [
+    {
+      "@type": "PropertyValue",
+      "propertyID": "pidSystem",
+      "name": "Persistent Identifier System",
+      "value": "DOI"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "software",
+      "name": "Repository Software",
+      "value": "Dataverse"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "size",
+      "name": "Repository Size",
+      "value": "13 dataverses, 3.381 datasets, 25.713 files"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "repositoryType",
+      "name": "Repository & Provider Type",
+      "value": "disciplinary, dataProvider"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "metadataStandard",
+      "name": "DDI - Data Documentation Initiative",
+      "value": "http://www.dcc.ac.uk/resources/metadata-standards/ddi-data-documentation-initiative"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "metadataStandard",
+      "name": "DataCite Metadata Schema",
+      "value": "http://www.dcc.ac.uk/resources/metadata-standards/datacite-metadata-schema"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "metadataStandard",
+      "name": "Dublin Core",
+      "value": "http://www.dcc.ac.uk/resources/metadata-standards/dublin-core"
+    }
+  ],
+  "comment": "Odum Dataverse is covered by Thomson Reuters Data Citation Index.\nOdum Institute Archive Dataverse is part of UNC Dataverse\nOdum Institute Archive Dataverse was CTS certified until 2023-10-31."
+}
+</script></textarea>
+
+      <div class="controls">
+        <button id="parseBtn">Parse to HTML</button>
+        <button id="clearBtn" class="secondary">Clear</button>
+      </div>
+    </div>
+
+    <!-- Output Column -->
+    <div class="panel">
+      <div style="font-weight:600; margin-bottom:0.75rem;">Rendered HTML Output:</div>
+      <div id="output"></div>
+    </div>
+  </div>
+</div>
+<script>
+  const inputEl = document.getElementById('jsonInput');
+  const outputEl = document.getElementById('output');
+
+  // Fjern <script type="application/ld+json">-omslaget hvis det finnes
+  function extractJsonString(raw) {
+    return raw
+      .trim()
+      .replace(/^<script[^>]*>/i, '')
+      .replace(/<\/script>$/i, '')
+      .trim();
+  }
+
+  // Gjør camelCase eller @-nøkler om til lesbare etiketter
+  function formatLabel(key) {
+    if (key === '@id') return 'ID';
+    if (key === '@type') return 'Type';
+    if (key === '@context') return 'Context';
+    return key
+      .replace(/^@/, '')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/^./, str => str.toUpperCase());
+  }
+
+  // Formater enkeltverdier (nettadresser, e-post, boolske verdier og tekst med linjeskift)
+  function renderPrimitive(val) {
+    if (val === null || val === undefined) {
+      const span = document.createElement('span');
+      span.style.color = '#94a3b8';
+      span.textContent = 'null';
+      return span;
+    }
+
+    if (typeof val === 'boolean') {
+      const span = document.createElement('span');
+      span.textContent = val ? 'Yes (true)' : 'No (false)';
+      return span;
+    }
+
+    const str = String(val);
+
+    // Sjekk etter HTTP/HTTPS-nettadresse
+    if (/^https?:\/\/\S+$/i.test(str)) {
+      const a = document.createElement('a');
+      a.href = str;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = str;
+      return a;
+    }
+
+    // Sjekk etter e-postadresse
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str)) {
+      const a = document.createElement('a');
+      a.href = `mailto:${str}`;
+      a.textContent = str;
+      return a;
+    }
+
+    // Bevar linjeskift for beskrivelser og kommentarer
+    const p = document.createElement('p');
+    p.className = 'multiline-text';
+    p.textContent = str;
+    return p;
+  }
+  // Bygg HTML-kort og tabeller rekursivt for objekter og lister
+  function renderNode(data) {
+    // Håndter lister (Arrays)
+    if (Array.isArray(data)) {
+      const allPrimitives = data.every(item => item === null || typeof item !== 'object');
+
+      if (allPrimitives) {
+        const tagList = document.createElement('div');
+        tagList.className = 'tag-list';
+        data.forEach(item => {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.appendChild(renderPrimitive(item));
+          tagList.appendChild(tag);
+        });
+        return tagList;
+      }
+
+      const wrapper = document.createElement('div');
+      data.forEach(item => wrapper.appendChild(renderNode(item)));
+      return wrapper;
+    }
+
+    // Håndter objekter
+    if (typeof data === 'object' && data !== null) {
+      const card = document.createElement('div');
+      card.className = 'entity-card';
+
+      // Vis @type-merke og navn i en topptekst hvis tilgjengelig
+      if (data['@type'] || data['name']) {
+        const header = document.createElement('div');
+        header.className = 'entity-header';
+
+        if (data['@type']) {
+          const badge = document.createElement('span');
+          badge.className = 'type-badge';
+          badge.textContent = Array.isArray(data['@type']) ? data['@type'].join(', ') : data['@type'];
+          header.appendChild(badge);
+        }
+
+        if (data['name']) {
+          const title = document.createElement('strong');
+          title.textContent = data['name'];
+          header.appendChild(title);
+        }
+
+        card.appendChild(header);
+      }
+
+      const table = document.createElement('table');
+      table.className = 'prop-table';
+
+      Object.entries(data).forEach(([key, value]) => {
+        // Hopp over @context og @type som allerede er vist i toppteksten
+        if (key === '@context' || key === '@type') return;
+
+        const tr = document.createElement('tr');
+        const tdKey = document.createElement('td');
+        tdKey.className = 'prop-key';
+        tdKey.textContent = formatLabel(key);
+
+        const tdVal = document.createElement('td');
+        tdVal.className = 'prop-val';
+        tdVal.appendChild(renderNode(value));
+
+        tr.appendChild(tdKey);
+        tr.appendChild(tdVal);
+        table.appendChild(tr);
+      });
+
+      card.appendChild(table);
+      return card;
+    }
+
+    // Standard visning for enkeltverdier
+    return renderPrimitive(data);
+  }
+
+  function parseAndRender() {
+    outputEl.innerHTML = '';
+    const cleaned = extractJsonString(inputEl.value);
+
+    if (!cleaned) {
+      outputEl.innerHTML = '<div class="error">Please paste valid JSON-LD into the text area.</div>';
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      outputEl.appendChild(renderNode(parsed));
+    } catch (err) {
+      outputEl.innerHTML = `<div class="error"><strong>JSON Parse Error:</strong> ${err.message}</div>`;
+    }
+  }
+
+  document.getElementById('parseBtn').addEventListener('click', parseAndRender);
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    inputEl.value = '';
+    outputEl.innerHTML = '';
+  });
+
+  // Vis standardeksempelet umiddelbart når siden lastes
+  parseAndRender();
+</script>
+
+</body>
+</html>
